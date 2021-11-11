@@ -30,8 +30,15 @@
                 "icon": "fas fa-random",
                 "url": "pages/generator.php",
                 "show-header-and-footer": true
+            },
+            {
+                "name": "EMA Config",
+                "icon": "fas fa-cog",
+                "url": "pages/config.php",
+                "show-header-and-footer": false
             }
-		],
+
+        ],
 		"control-center": [
 		]
 	},
@@ -92,12 +99,6 @@
                     "type": "text"
                 },
                 {
-                    "key": "schedule-name",
-                    "name": "<b>Schedule Name</b><br>Name of schedule from next section that should be instantiated on this window",
-                    "required": true,
-                    "type": "text"
-                },
-                {
                     "key": "window-form",
                     "name": "<b>Repeating Survey Form</b><br>Name of the form",
                     "required": false,
@@ -110,7 +111,13 @@
                     "type": "event-list"
                 },
                 {
-                    "key": "default-schedule-start-time",
+                    "key": "window-schedule-name",
+                    "name": "<b>Schedule Name</b><br>Name of schedule from next section that should be instantiated on this window",
+                    "required": true,
+                    "type": "text"
+                },
+                {
+                    "key": "default-schedule-offset",
                     "name": "<b>Default Daily Schedule Start Time</b><br>Enter minutes from midnight as the default schedule start time each day, <i>e.g. 8AM would be 60*8 = 480</i>",
                     "required": true,
                     "type": "text"
@@ -126,7 +133,7 @@
                     "name": "<b>Custom Start Time Offset Event</b><br>If specified, this is event where field above resides",
                     "required": false,
                     "type": "event-list"
-                },
+                }
             ]
         },
         {

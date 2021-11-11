@@ -26,4 +26,18 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 	}
 
 
+    /**
+     * Read the current config from a single key-value pair in the external module settings table
+     */
+    function getConfigAsString() {
+        $string_config = $this->getProjectSetting($this->PREFIX . '-config');
+        // SurveyDashboard::log($string_config);
+        return $string_config;
+    }
+
+    function setConfigAsString($string_config) {
+        $this->setProjectSetting($this->PREFIX . '-config', $string_config);
+    }
+
+
 }
