@@ -18,7 +18,8 @@
 	"permissions": [
 		"redcap_module_system_enable",
 		"redcap_module_project_enable",
-		"redcap_module_save_configuration"
+		"redcap_module_save_configuration",
+        "redcap_save_record"
 	],
 
 	"enable-every-page-hooks-on-system-pages": false,
@@ -44,10 +45,28 @@
 	},
 
 	"no-auth-pages": [
-
+        "pages/SendMessages"
 	],
 
 	"project-settings": [
+        {
+            "key": "use-config-file",
+            "name": "<b>When checked, this config file will be used for source of windows/schedules. Otherwise, the config builder will be used.</b>",
+            "required": false,
+            "type": "checkbox"
+        },
+        {
+            "key": "cell-phone-field",
+            "name": "<b>Field which stores the cell phone to send texts</b><br>Field in project which stores cell phone number used to text.",
+            "required": true,
+            "type": "field-list"
+        },
+        {
+            "key": "cell-phone-event",
+            "name": "<b>Event which stores the cell phone to send texts</b><br>Event in project which the cell phone field resides.",
+            "required": true,
+            "type": "event-list"
+        },
 
         {
             "key": "windows",
@@ -70,25 +89,25 @@
                 },
                 {
                     "key": "window-start-field",
-                    "name": "<b>Window Start Date Field</b><br>This is a date field that is day 0 for the window",
-                    "required": false,
+                    "name": "<b>Window Start Date Field</b><br>This is a date field that is day 0 for the window. This is required to calculate times of messages",
+                    "required": true,
                     "type": "field-list"
                 },
                 {
                     "key": "window-start-event",
-                    "name": "<b>Window Start Date Event</b><br>If specified, this is event where field above resides",
+                    "name": "<b>Window Start Date Event</b><br>If specified, this is event where field above resides.  This is required for longitudinal projects",
                     "required": false,
                     "type": "event-list"
                 },
                 {
-                    "key": "window-kill-field",
-                    "name": "<b>Window Kill Field</b><br>If specified, this field must be 'true' (e.g. a calc field of 1) in order for notifications to go out for this user/window",
+                    "key": "window-opt-out-field",
+                    "name": "<b>Window Opt Out Field</b><br>If specified, this field must be equal to 1 (e.g. a calc field of 1) in order for notifications to be inhibited for this window",
                     "required": false,
                     "type": "field-list"
                 },
                 {
-                    "key": "window-kill-event",
-                    "name": "<b>Window Kill Event</b><br>If specified, this is event where field above resides",
+                    "key": "window-opt-out-event",
+                    "name": "<b>Window Opt Out Event</b><br>If Window Opt Out is specified and this is a longitudinal project, this event, where field above resides, is required",
                     "required": false,
                     "type": "event-list"
                 },
@@ -117,22 +136,40 @@
                     "type": "text"
                 },
                 {
-                    "key": "default-schedule-offset",
-                    "name": "<b>Default Daily Schedule Start Time</b><br>Enter minutes from midnight as the default schedule start time each day, <i>e.g. 8AM would be 60*8 = 480</i>",
+                    "key": "schedule-offset-default",
+                    "name": "<b>Default Daily Schedule Start Time</b><br>Enter minutes from midnight as the default schedule start time of each day, <i>e.g. 8AM would be 60*8 = 480</i>",
                     "required": true,
                     "type": "text"
                 },
                 {
-                    "key": "custom-start-time-field",
-                    "name": "<b>Custom Start Time Offset Field</b><br>If specified, the start-time for a given record can be customized.  The field should contain the number of minutes from midnight when first EMA event of the day should begin",
+                    "key": "schedule-offset-override-field",
+                    "name": "<b>Custom Start Time Offset Field</b><br>If specified, the start-time for a given record can be customized.  The field is the number of minutes from midnight when first EMA event of the day should begin",
                     "required": false,
                     "type": "field-list"
                 },
                 {
-                    "key": "custom-start-time-event",
-                    "name": "<b>Custom Start Time Offset Event</b><br>If specified, this is event where field above resides",
+                    "key": "schedule-offset-override-event",
+                    "name": "<b>Custom Start Time Offset Event</b><br>If Custom Start Time Offset is specified, this is event where field above resides",
                     "required": false,
                     "type": "event-list"
+                },
+                {
+                    "key": "text-message",
+                    "name": "<b>Text for message to send with survey link</b><br>Message for original text message",
+                    "required": true,
+                    "type": "textarea"
+                },
+                {
+                    "key": "text-reminder1-message",
+                    "name": "<b>Text for reminder 1 message</b><br>Message for Reminder 1 text message",
+                    "required": false,
+                    "type": "textarea"
+                },
+                {
+                    "key": "text-reminder2-message",
+                    "name": "<b>Text for reminder 2 message</b><br>Message for Reminder 2 text message",
+                    "required": false,
+                    "type": "textarea"
                 }
             ]
         },
@@ -163,13 +200,19 @@
                 },
                 {
                     "key": "schedule-reminders",
-                    "name": "<b>Reminders</b><br>A comma-separated list of reminder times (e.g. 5,10)",
+                    "name": "<b>Reminders</b><br>A comma-separated list of reminder times (e.g. 5,10). Code is currently setup for 1 or 2 reminders only.",
                     "required": false,
                     "type": "text"
                 },
                 {
                     "key": "schedule-close-offset",
                     "name": "<b>Event Close Offset</b><br>Enter the number of minutes from initial invitation when the EMA window will end (e.g. 20).  New survey entries after this time will not be allowed",
+                    "required": false,
+                    "type": "text"
+                },
+                {
+                    "key": "schedule-length",
+                    "name": "<b>Schedule length</b><br>Enter the length of the window",
                     "required": false,
                     "type": "text"
                 }
