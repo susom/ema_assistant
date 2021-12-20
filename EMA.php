@@ -44,10 +44,64 @@ class EMA extends \ExternalModules\AbstractExternalModule {
     public function redcap_save_record($project_id, $record, $instrument, $event_id, $group_id,
                                        $survey_hash, $response_id, $repeat_instance) {
 
-        $this->emDebug("Save record $record, instrument $instrument, project id $project_id");
         // Check to see if it is time to create EMA instances specified by the configs
         $this->checkWindowScheduleCalculator($project_id, $record);
 
+    }
+
+    public function redcap_survey_page_top($project_id, $record, $instrument, $event_id, $group_id,
+                                           $survey_hash, $response_id, $repeat_instance) {
+
+        // Check to see if this form is closed. If so, don't let the participant take the survey
+        $closed = $this->checkForClosedWindow($project_id, $record, $instrument, $event_id, $repeat_instance);
+        if ($closed) {
+            // Do what???
+        }
+    }
+
+
+    private function checkForClosedWindow($project_id, $record, $instrument, $event_id, $repeat_instance) {
+
+        // Retrieve the data for this instance
+        try {
+            $rf = new RepeatingForms($project_id, $instrument);
+            $instance = $rf->getInstanceById($record, $repeat_instance, $event_id);
+        } catch (Exception $ex) {
+            $this->emError("Exception when trying to instance repeating Form Class with message" . json_encode($ex));
+            return false;
+        }
+
+        // See if there is a window name filled out
+        $window_name = $instance['ema_window_name'];
+        if (!empty($window_name)) {
+
+            // Retrieve the configurations for windows and schedules
+            [$windows, $schedules] = $this->getConfigAsArrays();
+
+            foreach ($windows as $window) {
+                if ($window['window-name'] == $window_name) {
+
+                    // Find schedule corresponding to this window
+                    $schedule = $this->findScheduleForThisWindow($window['window-schedule-name'], $schedules);
+
+                    // Add the close offset to the send timestamp and see if we are in the close window
+                    $datetime_in_sec = strtotime($instance['ema_open_ts']);
+                    $close_datetime = $datetime_in_sec + $schedule['schedule-close-offset']*60;
+                    $now_timestamp = strtotime("now");
+
+                    // See if we are past the close time
+                    if ($close_datetime < $now_timestamp) {
+
+                        // Don't let them fill out the survey
+                        $this->emDebug("Closed survey for project $project_id, record $record, form $instrument, event $event_id");
+                        return true;
+
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
 
