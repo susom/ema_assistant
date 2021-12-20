@@ -201,52 +201,34 @@ class EMA extends \ExternalModules\AbstractExternalModule {
         // Loop over each config to see if this schedule is ready to process
         foreach ($windows as $config) {
 
-            // We need to find the data for each field specified in the config.
-            //  They can be in the same event or different events.
-            if ($is_longitudinal) {
-
-                // Find the form event id - the given event may be a name or id
-                $form_event_id = $this->convertEventToID($all_events, $config['window-form-event'], $is_longitudinal);
-                $form_data = $this->findFormData($record_data[$record], $form_event_id, $config['window-form']);
-
-                $start_event_id = $this->convertEventToID($all_events, $config['window-start-event'], $is_longitudinal);
-                $start_data = $record_data[$record][$start_event_id];
-
-                $opt_out_event_id = $this->convertEventToID($all_events, $config['window-opt-out-event'], $is_longitudinal);
-                $opt_out_data = $record_data[$record][$opt_out_event_id];
-
-                $override_event_id = $this->convertEventToID($all_events, $config['schedule-offset-override-event'], $is_longitudinal);
-                $override_data = $record_data[$record][$override_event_id];
-
-                $phone_event_id = $this->convertEventToID($all_events, $phone_event, $is_longitudinal);
-                $phone_data = $record_data[$record][$phone_event_id];
-
-            } else {
-                $form_event_id = $this->convertEventToID($all_events, $config['window-form-event'], $is_longitudinal);
-                $form_data = $this->findFormData($record_data[$record], $form_event_id, $config['window-form']);
-                $phone_data = $override_data = $start_data = $opt_out_data = $record_data[$record][$form_event_id];
-            }
-
-            // Check for required fields - window-start-field in window-start-event is not empty
-            $start_date = $this->findRecordData($start_data, $config['window-start-field']);
-            $phone_number = $this->findRecordData($phone_data, $phone_field);
+            // Check for required fields - window-start-field in window-start-event is not empty and the phone number is not empty
+            $start_date = $this->findFieldValue($record_data, $record, $all_events, $config['window-start-field'], $config['window-start-event'], $is_longitudinal);
+            $phone_number = $this->findFieldValue($record_data, $record, $all_events, $phone_field, $phone_event, $is_longitudinal);
+            $this->emDebug("Start date: " . $start_date . ", phone num: " . $phone_number);
             if (!empty($start_date) and !empty($phone_number)) {
 
                 // See if the ready logic has been met
                 $ready = REDCap::evaluateLogic($config['window-trigger-logic'], $project_id, $record);
+                $this->emDebug("Is this ready? " . $ready);
                 if ($ready) {
 
                     // Check that window-opt-out-field is not equal to 1
-                    $opt_out = $this->checkForOptOut($config['window-opt-out-field'], $opt_out_data);
+                    $opt_out = $this->checkForOptOut($record_data, $record, $all_events,
+                                $config['window-opt-out-field'], $config['window-opt-out-event'], $is_longitudinal);
+                    $this->emDebug("Opt out value: " . $opt_out);
                     if (!$opt_out) {
 
                         // Get all instances of the window-form/window-event instrument and check that there are not already instances of the window-name in those instances...
-                        $alreadyCreated = $this->scheduleAlreadyExists($form_data, $config['window-name']);
+                        $form_event_id = $this->convertEventToID($all_events, $config['window-form-event'], $is_longitudinal);
+                        $alreadyCreated = $this->scheduleAlreadyExists($record_data[$record], $config['window-form'],
+                            $form_event_id, $config['window-name']);
+                        $this->emDebug("Schedule already exists? " . $alreadyCreated);
                         if (!$alreadyCreated) {
 
                             $schedule = $this->findScheduleForThisWindow($config['window-schedule-name'], $schedules);
 
-                            $custom_start_time = $this->findRecordData($override_data, $config['schedule-offset-override-field']);
+                            $custom_start_time = $this->findFieldValue($record_data, $record, $all_events, $config['schedule-offset-override-field'],
+                                $config['schedule-offset-override-event'], $is_longitudinal);
 
                             $final_start_time = (empty($custom_start_time) ? $config['schedule-offset-default'] : $custom_start_time);
 
@@ -260,56 +242,69 @@ class EMA extends \ExternalModules\AbstractExternalModule {
         }
     }
 
+
+    /**
+     * This function instantiates the calculate window schedule class to create the schedule for this record.
+     *
+     * @param $record
+     * @param $config
+     * @param $start_date
+     * @param $final_start_time
+     * @param $form_event_id
+     * @param $phone_number
+     * @param $schedule
+     */
+    private function calculateWindowSchedule($record, $config, $start_date, $final_start_time,
+                                             $form_event_id, $phone_number, $schedule) {
+
+        try {
+            $sched = new ScheduleInstance($this);
+            $sched->setUpSchedule($record, $config, $start_date, $final_start_time, $form_event_id,
+                $phone_number, $schedule);
+            $sched->createWindowSchedule();
+        } catch (Exception $ex) {
+            $this->emError("Exception while instantiating ScheduleInstance with message" . $ex);
+        }
+
+    }
+
+
     /**
      * This function checks to see if there are already instances created with this Window Name.  If so, don't
      * create more instances.
      *
      * @param $data
+     * @param $form_name
+     * @param $form_event_id
      * @param $window_name
      * @return bool
      */
-    private function scheduleAlreadyExists($data, $window_name)
+    private function scheduleAlreadyExists($data, $form_name, $form_event_id, $window_name)
     {
-
-        $this->emDebug("Data: " . json_encode($data) . ", window_name: $window_name");
-        $already_created = false;
-        foreach($data as $instance => $instance_data) {
-            if ($instance_data['ema_window_name'] == $window_name) {
-                $this->emDebug("instance window: " . $instance_data['ema_window_name'] . ', window name: ' . $window_name);
-                $already_created = true;
-                break;
-            }
-        }
-
-        $this->emDebug("already created " . $already_created);
-        return $already_created;
-
-    }
-
-    /**
-     * This function retrieves instance data based on project type.  The data is stored differently if it is a Classical
-     * project, Longitundinal project and whether the data is on a repeating form or a repeating event.
-     *
-     * @param $data
-     * @param $form_event_id
-     * @param $form_name
-     * @return mixed
-     */
-    private function findFormData($data, $form_event_id, $form_name) {
-
         global $Proj;
+
+        $already_created = false;
 
         // We need to determine if the form with the data is a repeating form or a repeating event
         $repeatingForms = $Proj->RepeatingFormsEvents;
-        $repeats = $repeatingForms[$form_event_id];
-        if ($repeats == 'WHOLE') {
+        $repeat_type = $repeatingForms[$form_event_id];
+        if ($repeat_type == 'WHOLE') {
             $form_data = $data['repeat_instances'][$form_event_id][''];
         } else {
             $form_data = $data['repeat_instances'][$form_event_id][$form_name];
         }
 
-        return $form_data;
+        foreach($form_data as $instance => $instance_data) {
+            if ($instance_data['ema_window_name'] == $window_name) {
+                $already_created = true;
+                break;
+            }
+        }
+
+        return $already_created;
+
     }
+
 
     /**
      * This function will take an event name or an event id and returns the event id.
@@ -317,7 +312,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
      * @param $all_events
      * @param $event
      * @param $is_longitudinal
-     * @return int|string
+     * @return event_id
      */
     private function convertEventToID($all_events, $event, $is_longitudinal) {
 
@@ -342,48 +337,30 @@ class EMA extends \ExternalModules\AbstractExternalModule {
     }
 
     /**
-     * This function instantiates the calculate window schedule class to create the schedule for this record.
+     * Find the value of the requested field
      *
-     * @param $record
-     * @param $config
-     * @param $start_date
-     * @param $final_start_time
-     * @param $form_event_id
-     * @param $phone_number
-     * @param $schedule
+     * @param $record_data
+     * @param $record_id
+     * @param $all_events
+     * @param $field_name
+     * @param $field_event
+     * @param $is_longitudinal
+     * @return - REDCap value of the request field
      */
-    private function calculateWindowSchedule($record, $config, $start_date, $final_start_time,
-                                             $form_event_id, $phone_number, $schedule) {
-
-        try {
-            $sched = new ScheduleInstance($this);
-            $sched->setUpSchedule($record, $config, $start_date, $final_start_time, $form_event_id,
-                            $phone_number, $schedule);
-            $sched->createWindowSchedule();
-        } catch (Exception $ex) {
-            $this->emError("Exception while instantiating ScheduleInstance with message" . $ex);
-        }
-
-    }
-
-    /**
-     * This function will retrieve a field value given the data from the event where it is stored.
-     *
-     * @param $data
-     * @param $field
-     * @return null
-     */
-    private function findRecordData($data, $field)
+    private function findFieldValue($record_data, $record_id, $all_events, $field_name, $field_event, $is_longitudinal)
     {
-        // Find the value of the requested field
-        if (!empty($field)) {
-            $value = $data[$field];
+
+        if (empty($field_name)) {
+            return null;
         } else {
-            $value = null;
+
+            // First find the event id.  It maybe the value entered or we may need to find it from the event name.
+            $event_id = $this->convertEventToID($all_events, $field_event, $is_longitudinal);
         }
 
-        return $value;
+        return $record_data[$record_id][$event_id][$field_name];
     }
+
 
     /**
      * This function finds the schedule corresponding to the window.
@@ -414,14 +391,29 @@ class EMA extends \ExternalModules\AbstractExternalModule {
      * @param $data
      * @return bool
      */
-    private function checkForOptOut($opt_out_field, $data)
+
+    /**
+     * This function will check the opt out field and determine if the user opted-out of this schedule
+     *
+     * @param $record_data
+     * @param $record_id
+     * @param $all_events
+     * @param $opt_out_field
+     * @param $opt_out_event
+     * @param $is_longitudinal
+     * @return bool
+     */
+    private function checkForOptOut($record_data, $record_id, $all_events, $opt_out_field, $opt_out_event, $is_longitudinal)
     {
 
         // Check for the opt-out field for this config
         if (!empty($opt_out_field)) {
 
+            // Find the event id
+            $event_id = $this->convertEventToID($all_events, $opt_out_event, $is_longitudinal);
+
             // Find the opt-out field value
-            $opt_out_value = $data["$opt_out_field"];
+            $opt_out_value = $record_data[$record_id][$event_id]["$opt_out_field"];
 
             // Check the opt-out field and see if it is set.
             $opt_out = ($opt_out_value == EMA::OPT_OUT_VALUE ? true : false);
