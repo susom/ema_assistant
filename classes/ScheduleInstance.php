@@ -16,15 +16,18 @@ class ScheduleInstance
     private $module;
 
     // Window parameters
-    private $window_name, $start_date, $form, $form_event;
+    private $window_name, $start_date, $form, $form_event_id;
     private $window_days = array();
 
     // Record parameters
-    private $pid, $record_id;
+    private $pid, $record_id, $phone_number;
 
     // Schedule parameters
     private $randomize, $start_time;
     private $sched_offsets = array();
+
+    // Text messages
+    private $text_msgs = array();
 
     public const MINUTES_IN_DAY = 1440;
 
@@ -45,20 +48,26 @@ class ScheduleInstance
      * @param $form_event
      * @param $schedule_config
      */
-    public function setUpSchedule($record_id, $window_name, $start_date, $start_time, $window_days,
-                                    $form, $form_event, $schedule_config)
+    public function setUpSchedule($record_id, $window_config, $start_date, $start_time,
+                                    $form_event_id, $phone_number, $schedule_config)
     {
         // These are window parameters
-        $this->window_name              = $window_name;
+        $this->window_name              = $window_config['window-name'];
         $this->start_date               = $start_date;
         $this->start_time               = $start_time;
-        $this->form                     = $form;
-        $this->form_event               = $form_event;
-        $this->window_days              = $window_days;
+        $this->form                     = $window_config['window-form'];
+        $this->form_event_id            = $form_event_id;
+        $this->window_days              = $window_config['window-days'];
 
         // This is the record we are calculating the window for
         $this->record_id                = $record_id;
         $this->pid                      = $this->module->getProjectId();
+        $this->phone_number             = $phone_number;
+
+        // These are the text messages that will be sent
+        $this->text_msgs[EMA::NOTIFICATION_SENT] = $window_config['text-message'];
+        $this->text_msgs[EMA::REMINDER_1_SENT] = $window_config['text-reminder1-message'];
+        $this->text_msgs[EMA::REMINDER_2_SENT] = $window_config['text-reminder2-message'];
 
         // This is the schedule configuration to determine days/times of surveys
         $this->sched_offsets            = $schedule_config['schedule-offsets'];
@@ -92,7 +101,7 @@ class ScheduleInstance
         // Instantiate the repeating form helper class
         try {
             $rf = new RepeatingForms($this->pid, $this->form);
-            $next_instance_id = $rf->getNextInstanceId($this->record_id, $this->form_event);
+            $next_instance_id = $rf->getNextInstanceId($this->record_id, $this->form_event_id);
         } catch (Exception $ex) {
             $this->module->emError("Exception when instantiating RepeatingForms class");
             return;
@@ -118,7 +127,7 @@ class ScheduleInstance
 
             // Save this info on the instrument specified
             $instance_id = $next_instance_id++;
-            $status = $rf->saveInstance($this->record_id, $saveSched, $instance_id, $this->form_event);
+            $status = $rf->saveInstance($this->record_id, $saveSched, $instance_id, $this->form_event_id);
             if (!$status) {
                 $message = $rf->last_error_message();
                 $this->emError("Error when saving data for window $this->window_name, record $this->record_id with message: " . $message);

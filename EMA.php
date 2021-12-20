@@ -44,6 +44,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
     public function redcap_save_record($project_id, $record, $instrument, $event_id, $group_id,
                                        $survey_hash, $response_id, $repeat_instance) {
 
+        $this->emDebug("Save record $record, instrument $instrument, project id $project_id");
         // Check to see if it is time to create EMA instances specified by the configs
         $this->checkWindowScheduleCalculator($project_id, $record);
 
@@ -183,8 +184,6 @@ class EMA extends \ExternalModules\AbstractExternalModule {
      */
     public function checkWindowScheduleCalculator($project_id, $record)
     {
-        global $Proj;
-
         // Retrieve the cell phone field and event from the configuration file
         $phone_field = $this->getProjectSetting('cell-phone-field');
         $phone_event = $this->getProjectSetting('cell-phone-event');
@@ -193,19 +192,20 @@ class EMA extends \ExternalModules\AbstractExternalModule {
         $is_longitudinal = REDCap::isLongitudinal();
         $all_events = REDCap::getEventNames(true, true);
 
-        // Retrieve configurations and look to see if it is ready for a schedule creation
+        // Retrieve configurations either from the config file or config builder
         [$windows, $schedules] = $this->getConfigAsArrays();
 
-        // Retrieve the data for this record so we can check all opt-out statuses
+        // Retrieve the data for this record
         $record_data = $this->getRedcapRecord($project_id, $record);
 
         // Loop over each config to see if this schedule is ready to process
         foreach ($windows as $config) {
 
-            // This is the data for the event for this config
+            // We need to find the data for each field specified in the config.
+            //  They can be in the same event or different events.
             if ($is_longitudinal) {
 
-                // Find the form event id no matter if the name or id are given
+                // Find the form event id - the given event may be a name or id
                 $form_event_id = $this->convertEventToID($all_events, $config['window-form-event'], $is_longitudinal);
                 $form_data = $this->findFormData($record_data[$record], $form_event_id, $config['window-form']);
 
@@ -242,7 +242,6 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 
                         // Get all instances of the window-form/window-event instrument and check that there are not already instances of the window-name in those instances...
                         $alreadyCreated = $this->scheduleAlreadyExists($form_data, $config['window-name']);
-                        $this->emDebug("Already created: " . $alreadyCreated);
                         if (!$alreadyCreated) {
 
                             $schedule = $this->findScheduleForThisWindow($config['window-schedule-name'], $schedules);
@@ -251,10 +250,9 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 
                             $final_start_time = (empty($custom_start_time) ? $config['schedule-offset-default'] : $custom_start_time);
 
-                            // Everything's a go - set the schedule
-                            $this->calculateWindowSchedule($record, $config['window-name'], $start_date,
-                                $final_start_time, $config['window-days'], $config['window-form'],
-                                $form_event_id, $schedule);
+                            // Everything's a go - create the schedule
+                            $this->calculateWindowSchedule($record, $config, $start_date,
+                                    $final_start_time, $form_event_id, $phone_number, $schedule);
                         }
                     }
                 }
@@ -273,14 +271,17 @@ class EMA extends \ExternalModules\AbstractExternalModule {
     private function scheduleAlreadyExists($data, $window_name)
     {
 
+        $this->emDebug("Data: " . json_encode($data) . ", window_name: $window_name");
         $already_created = false;
         foreach($data as $instance => $instance_data) {
             if ($instance_data['ema_window_name'] == $window_name) {
+                $this->emDebug("instance window: " . $instance_data['ema_window_name'] . ', window name: ' . $window_name);
                 $already_created = true;
                 break;
             }
         }
 
+        $this->emDebug("already created " . $already_created);
         return $already_created;
 
     }
@@ -343,26 +344,24 @@ class EMA extends \ExternalModules\AbstractExternalModule {
     /**
      * This function instantiates the calculate window schedule class to create the schedule for this record.
      *
-     * @param $pid
-     * @param $record_id
-     * @param $window_name
+     * @param $record
+     * @param $config
      * @param $start_date
-     * @param $start_time
-     * @param $window_days
-     * @param $form
-     * @param $form_event
-     * @param $schedule_config
+     * @param $final_start_time
+     * @param $form_event_id
+     * @param $phone_number
+     * @param $schedule
      */
-    private function calculateWindowSchedule($record_id, $window_name, $start_date, $start_time, $window_days,
-                                             $form, $form_event, $schedule_config) {
+    private function calculateWindowSchedule($record, $config, $start_date, $final_start_time,
+                                             $form_event_id, $phone_number, $schedule) {
 
         try {
             $sched = new ScheduleInstance($this);
-            $sched->setUpSchedule($record_id, $window_name, $start_date, $start_time, $window_days,
-                                $form, $form_event, $schedule_config);
+            $sched->setUpSchedule($record, $config, $start_date, $final_start_time, $form_event_id,
+                            $phone_number, $schedule);
             $sched->createWindowSchedule();
         } catch (Exception $ex) {
-            $this->emError("Exception while instantiating ScheduleInstance");
+            $this->emError("Exception while instantiating ScheduleInstance with message" . $ex);
         }
 
     }
