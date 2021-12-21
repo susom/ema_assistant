@@ -53,13 +53,22 @@ class EMA extends \ExternalModules\AbstractExternalModule {
                                            $survey_hash, $response_id, $repeat_instance) {
 
         // Check to see if this form is closed. If so, don't let the participant take the survey
-        $closed = $this->checkForClosedWindow($project_id, $record, $instrument, $event_id, $repeat_instance);
-        if ($closed) {
-            // Do what???
-        }
+        $this->checkForClosedWindow($project_id, $record, $instrument, $event_id, $repeat_instance);
+
     }
 
 
+    /**
+     * This function is called before the survey is rendered to the participant.  We need to check if the survey window
+     * has closed and if so, don't let the participant take the survey.
+     *
+     * @param $project_id
+     * @param $record
+     * @param $instrument
+     * @param $event_id
+     * @param $repeat_instance
+     * @return false|void
+     */
     private function checkForClosedWindow($project_id, $record, $instrument, $event_id, $repeat_instance) {
 
         // Retrieve the data for this instance
@@ -79,29 +88,32 @@ class EMA extends \ExternalModules\AbstractExternalModule {
             [$windows, $schedules] = $this->getConfigAsArrays();
 
             foreach ($windows as $window) {
+
+                // Loop over all windows to see if this instance is part of the window configuration
                 if ($window['window-name'] == $window_name) {
 
                     // Find schedule corresponding to this window
                     $schedule = $this->findScheduleForThisWindow($window['window-schedule-name'], $schedules);
 
-                    // Add the close offset to the send timestamp and see if we are in the close window
+                    // Add the close offset to the send timestamp and see if we are past the close timestamp
                     $datetime_in_sec = strtotime($instance['ema_open_ts']);
-                    $close_datetime = $datetime_in_sec + $schedule['schedule-close-offset']*60;
-                    $now_timestamp = strtotime("now");
+                    $close_sec = $datetime_in_sec + $schedule['schedule-close-offset']*60;
+                    $now_sec = strtotime("now");
 
                     // See if we are past the close time
-                    if ($close_datetime < $now_timestamp) {
+                    if ($close_sec < $now_sec) {
 
-                        // Don't let them fill out the survey
-                        $this->emDebug("Closed survey for project $project_id, record $record, form $instrument, event $event_id");
-                        return true;
+                        // Set the status that the participant tried to access the survey after close
+                        $instance['ema_status'] = EMA::ACCESS_AFTER_CLOSED;
+                        $rf->saveInstance($record, $instance, $repeat_instance, $event_id);
+                        $this->emDebug("Closed survey for project $project_id, record $record, form $instrument, event $event_id, instance $repeat_instance");
+
+                        // TODO: Stop the participant from taking the survey
 
                     }
                 }
             }
         }
-
-        return false;
     }
 
 
