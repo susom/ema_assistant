@@ -2,10 +2,15 @@
 namespace Stanford\EMA;
 
 use REDCap;
+use Exception;
+use ExternalModules\ExternalModules;
+use GuzzleHttp;
 use Stanford\SurveyDashboard\SurveyDashboard;
 
 require_once "emLoggerTrait.php";
 require_once "classes/ScheduleInstance.php";
+require_once "classes/RepeatingForms.php";
+require_once APP_PATH_DOCROOT . "/Libraries/Twilio/Services/Twilio.php";
 
 
 class EMA extends \ExternalModules\AbstractExternalModule {
@@ -19,9 +24,11 @@ class EMA extends \ExternalModules\AbstractExternalModule {
     const NOTIFICATION_SENT          = 2;
     const REMINDER_1_SENT            = 3;
     const REMINDER_2_SENT            = 4;
+    const SURVEY_COMPLETED           = 96;
     const NOTIFICATION_MISSED        = 97;
     const WINDOW_CLOSED              = 98;
     const ACCESS_AFTER_CLOSED        = 99;
+    const ERROR_WHEN_SENDING         = 100;
 
     const OPT_OUT_VALUE              = 1;
 
@@ -30,30 +37,62 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 		// Other code to run when object is instantiated
 	}
 
-	public function redcap_module_system_enable( $version ) {
-	}
-
-
-	public function redcap_module_project_enable( $version, $project_id ) {
-	}
-
-
-	public function redcap_module_save_configuration( $project_id ) {
-	}
-
     public function redcap_save_record($project_id, $record, $instrument, $event_id, $group_id,
                                        $survey_hash, $response_id, $repeat_instance) {
 
         // Check to see if it is time to create EMA instances specified by the configs
-        $this->checkWindowScheduleCalculator($project_id, $record);
+        //$this->checkWindowScheduleCalculator($project_id, $record);
 
-    }
+        $this->checkForMessagesToSend();
+
+   }
 
     public function redcap_survey_page_top($project_id, $record, $instrument, $event_id, $group_id,
                                            $survey_hash, $response_id, $repeat_instance) {
 
         // Check to see if this form is closed. If so, don't let the participant take the survey
         $this->checkForClosedWindow($project_id, $record, $instrument, $event_id, $repeat_instance);
+
+    }
+
+    public function redcap_survey_complete($project_id, $record, $instrument, $event_id, $group_id,
+                                           $survey_hash, $response_id, $repeat_instance) {
+
+        // Set the survey status ema_status to SURVEY_COMPLETE for this instance
+        $this->setSurveyCompleteStatus($project_id, $record, $instrument, $event_id, $repeat_instance);
+
+    }
+
+
+    /**
+     * When the survey has been completed, set the status of this instance to Survey Complete.
+     *
+     * @param $project_id
+     * @param $record
+     * @param $instrument
+     * @param $event_id
+     * @param $repeat_instance
+     */
+    private function setSurveyCompleteStatus($project_id, $record, $instrument, $event_id, $repeat_instance) {
+
+        // If this form is part of a configuration, set the status to Survey Complete
+        $update['ema_status'] = EMA::SURVEY_COMPLETED;
+
+        try {
+            // Retrieve the data on this form
+            $rf = new RepeatingForms($project_id, $instrument);
+            $instance = $rf->getInstanceById($record, $repeat_instance, $event_id);
+
+            // See if the status field exists on this form and if so, update the status
+            if (array_key_exists('ema_status', $instance)) {
+
+                $rf->saveInstance($record, $update, $repeat_instance, $event_id);
+                $this->emDebug("Return message: " . $rf->last_error_message);
+            }
+
+        } catch (Exception $ex) {
+            $this->emError("Cannot save Survey Complete status with error: " . json_encode($ex));
+        }
 
     }
 
@@ -108,8 +147,25 @@ class EMA extends \ExternalModules\AbstractExternalModule {
                         $rf->saveInstance($record, $instance, $repeat_instance, $event_id);
                         $this->emDebug("Closed survey for project $project_id, record $record, form $instrument, event $event_id, instance $repeat_instance");
 
-                        // TODO: Stop the participant from taking the survey
+                        // Hide the normal container
+                        $closed_message = $this->getProjectSetting('closed-message');
+                        if (empty($closed_message)) $closed_message = 'The survey you are requesting is no longer open.  Please try again after your next prompt';
 
+                        ?>
+                            <style>#container, #pagecontent, #ema_closed {display:none;}</style>
+                            <div id="ema_closed" class="p-3">
+                                <div class="alert text-center m-5">
+                                    <h3><?php echo $closed_message ?></h3>
+                                </div>
+                            </div>
+                            <script type="text/javascript">
+                                $(document).ready(function() {
+                                    let ema = $('#ema_closed');
+                                    $('#pagecontent').replaceWith(ema);
+                                    ema.show();
+                                });
+                            </script>
+                        <?php
                     }
                 }
             }
@@ -121,43 +177,10 @@ class EMA extends \ExternalModules\AbstractExternalModule {
      * Read the current config from a single key-value pair in the external module settings table
      */
     function getConfigAsString() {
+
         $string_config = $this->getProjectSetting($this->PREFIX . '-config');
         //SurveyDashboard::log($string_config);
-/*
-        $string_config =
-            '{
-    "windows": [
-        {
-            "window-name": "Baseline",
-            "window-trigger-logic": "[ready_logic(1)] = 1",
-            "window-start-field":"w1_start_date",
-            "window-start-event":"baseline_arm_1",
-            "window-days": [1,2,3,4,6,7],
-            "window-schedule-name": "4xDay",
-            "window-form":"ema_tracker",
-            "window-form-event":"104",
-            "window-opt-out-field":"exclude_if",
-            "window-opt-out-event":"baseline_arm_1",
-            "schedule-offset-default": 480,
-            "schedule-offset-override-field":"custom_start_date",
-            "schedule-offset-override-event":"baseline_arm_1",
-            "text-message":"Please fill out this survey: ",
-            "text-reminder1-message":"This is a reminder to please fill out the survey: ",
-            "text-reminder2-message":"This is your final reminder to please fill out the survey: "
-        }
-    ],
-    "schedules": [
-        {
-            "schedule-name":"4xDay",
-            "schedule-offsets": [0,240,480,720],
-            "schedule-randomize-window": "10",
-            "schedule-reminders": [5,10],
-            "schedule-close-offset": 20,
-            "schedule-length": 100
-        }
-    ]
-    }';
-*/
+
         return $string_config;
     }
 
@@ -182,7 +205,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
             'window-name', 'window-trigger-logic', 'window-start-field', 'window-start-event', 'window-opt-out-field',
             'window-opt-out-event', 'window-days', 'window-form', 'window-form-event', 'window-schedule-name',
             'schedule-offset-default', 'schedule-offset-override-field', 'schedule-offset-override-event', 'text-message',
-            'text_reminder1-message', 'text_reminder2-message'
+            'text-reminder1-message', 'text-reminder2-message', 'cell-phone-field', 'cell-phone-event'
         );
         $schedule_config_fields = array(
             'schedule-name', 'schedule-offsets', 'schedule-randomize-window', 'schedule-reminders', 'schedule-close-offset',
@@ -250,9 +273,6 @@ class EMA extends \ExternalModules\AbstractExternalModule {
      */
     public function checkWindowScheduleCalculator($project_id, $record)
     {
-        // Retrieve the cell phone field and event from the configuration file
-        $phone_field = $this->getProjectSetting('cell-phone-field');
-        $phone_event = $this->getProjectSetting('cell-phone-event');
 
         // Find event name for the event we are saving
         $is_longitudinal = REDCap::isLongitudinal();
@@ -269,7 +289,9 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 
             // Check for required fields - window-start-field in window-start-event is not empty and the phone number is not empty
             $start_date = $this->findFieldValue($record_data, $record, $all_events, $config['window-start-field'], $config['window-start-event'], $is_longitudinal);
-            $phone_number = $this->findFieldValue($record_data, $record, $all_events, $phone_field, $phone_event, $is_longitudinal);
+
+            // Retrieve the cell phone field and event from the configuration file
+            $phone_number = $this->findFieldValue($record_data, $record, $all_events, $config['cell-phone-field'], $config['cell-phone-event'], $is_longitudinal);
             $this->emDebug("Start date: " . $start_date . ", phone num: " . $phone_number);
             if (!empty($start_date) and !empty($phone_number)) {
 
@@ -325,8 +347,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 
         try {
             $sched = new ScheduleInstance($this);
-            $sched->setUpSchedule($record, $config, $start_date, $final_start_time, $form_event_id,
-                $phone_number, $schedule);
+            $sched->setUpSchedule($record, $config, $start_date, $final_start_time, $form_event_id, $schedule);
             $sched->createWindowSchedule();
         } catch (Exception $ex) {
             $this->emError("Exception while instantiating ScheduleInstance with message" . $ex);
@@ -450,13 +471,6 @@ class EMA extends \ExternalModules\AbstractExternalModule {
         return $found_schedule;
     }
 
-    /**
-     * This function will check the opt out field and determine if the user opted-out of this schedule
-     *
-     * @param $opt_out_field
-     * @param $data
-     * @return bool
-     */
 
     /**
      * This function will check the opt out field and determine if the user opted-out of this schedule
@@ -503,7 +517,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
     private function getRedcapRecord($project_id, $record) {
 
         // ** TODO - should cut down on the fields retrieve but in addition to the form fields, we need the
-        // opt-out field, start-time field, etc. so it's not as easy to retrieve just the data we need
+        // ** TODO - opt-out field, start-time field, etc. so it's not as easy to retrieve just the data we need
         //$fields = array('ema_window_name', 'ema_window_day', 'ema_sequence', 'ema_offset', 'ema_open', 'ema_open_ts', 'ema_status');
         return REDCap::getData($project_id, 'array', $record);
     }
@@ -526,9 +540,15 @@ class EMA extends \ExternalModules\AbstractExternalModule {
             $msgCheckURL = $this->getUrl('pages/SendMessages.php?pid=' . $proj_id, true, true);
             $this->emDebug("Calling cron to check for messages to send for pid $proj_id at URL " . $msgCheckURL);
 
-            // Call the project through the API so it will be in project context
-            $response = http_get($msgCheckURL);
-
+            try {
+                $client = new GuzzleHttp\Client;
+                $resp = $client->request('GET', $msgCheckURL, [
+                    GuzzleHttp\RequestOptions::SYNCHRONOUS => true
+                ]);
+                $this->emDebug("Response", $resp->getBody());
+            } catch (Exception $ex) {
+                $this->emError("Exception throw when instantiating Guzzle with error " . json_encode($ex));
+            }
         }
     }
 }

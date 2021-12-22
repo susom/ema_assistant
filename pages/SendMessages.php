@@ -5,6 +5,7 @@ namespace Stanford\EMA;
 use REDCap;
 use Exception;
 require_once $module->getModulePath() . "./classes/RepeatingForms.php";
+require_once APP_PATH_DOCROOT . "/Libraries/Twilio/Services/Twilio.php";
 
 $pid = $module->getProjectId();
 
@@ -15,8 +16,19 @@ $pid = $module->getProjectId();
 $is_longitudinal = REDCap::isLongitudinal();
 $all_events = REDCap::getEventNames(true, true);
 $record_field = REDCap::getRecordIdField();
-$classical_data = null;
 
+// Retrieve the twilio setup data
+$sid = $module->getProjectSetting('twilio-account-sid');
+$token = $module->getProjectSetting('twilio-token');
+$from_number = $module->getProjectSetting('twilio-from-number');
+
+// Get handle to twilio service
+try {
+    $client = new \Services_Twilio($sid, $token);
+} catch (Exception $ex) {
+    $module->emError("Cannot get handle to twilio service. Error message: " . $ex);
+    return;
+}
 
 // Loop over each window configuration
 foreach($windows as $window) {
@@ -24,25 +36,29 @@ foreach($windows as $window) {
     //Instantiate the RepeatingForm class
     $rf = handleToRFClass($pid, $window['window-form']);
 
+    // Find the phone number in REDCap for all records
+    [$phone_event_name, $phone_event_id] = getEventNameAndId($all_events, $window['cell-phone-event']);
+    $phones = getPhoneNumForText($window['cell-phone-field'], $phone_event_id);
+
     // Find the schedule configuration for this window configuration
     $schedule_name = $window['window-schedule-name'];
     $schedule = $module->findScheduleForThisWindow($schedule_name, $schedules);
 
+
     // Retrieve the opt-out field
-    $opt_outs = getOptOutValues($window['window-opt-out-event'], $record_field, $window['window-opt-out-field']);
+    $records = getOptOutValues($window['window-opt-out-event'], $record_field, $window['window-opt-out-field']);
 
     // Loop over each record and check if any texts need to be sent
-    foreach($opt_outs as $opt_out) {
+    foreach($records as $opt_out) {
 
         $record_id = $opt_out[$record_field];
         $opt_out_value = $opt_out[$window['window-opt-out-field']];
-        [$event_name, $event_id] = getEventNameAndId($window['window-form-event']);
+        [$event_name, $event_id] = getEventNameAndId($all_events, $window['window-form-event']);
         $form = $window['window-form'];
         $window_name = $window['window-name'];
 
         // Retrieve the data for this record
         $data = getRepeatingData($rf, $record_id, $is_longitudinal, $event_name, $event_id, $form, $window_name);
-        $module->emDebug("Instances: " . json_encode($data));
         if (count($data) > 0) {
 
             // If the opt out flag is set, close out these instances
@@ -55,13 +71,10 @@ foreach($windows as $window) {
 
                 // Determine if the window should be closed, the notification should be sent or a reminder should be sent
                 // If the form complete status is 2, don't send out any reminders since the survey was completed.
-                $sendInstances = determineAction($rf, $record_id, $event_id, $data, $schedule['schedule-close-offset'],
-                     $schedule['schedule-reminders'], $window['window-form'] . '_complete');
-                if (!empty($sendInstances)) {
-                    $status = sendTexts($rf, $record_id, $event_id, $sendInstances);
-                }
+                determineAction($rf, $client, $record_id, $event_id, $data, $schedule, $window, $from_number, $phones[$record_id]);
             }
         }
+        break;
     }
 }
 
@@ -75,41 +88,42 @@ foreach($windows as $window) {
  * @param $send
  * @return bool
  */
-function sendTexts($rf, $record_id, $event_id, $send) {
+function sendText($client, $from_number, $destination_number, $text) {
 
     global $module;
 
-    foreach($send as $instance_id => $which_text) {
-
-        if ($which_text['ema_status'] == EMA::NOTIFICATION_SENT) {
-
-            // Send original text
-            $module->emDebug("Instance ID: " . $instance_id . " sending original text");
-
-        } else if ($which_text['ema_status'] == EMA::REMINDER_1_SENT) {
-
-            // Send reminder 1
-            $module->emDebug("Instance ID: " . $instance_id . " sending reminder 1 text");
-
-        } else if ($which_text['ema_status'] == EMA::REMINDER_2_SENT) {
-
-            // Send reminder 2
-            $module->emDebug("Instance ID: " . $instance_id . " sending reminder 2 text");
-
-        }
+    try {
+        $sms = $client->account->messages->sendMessage(
+            $from_number,
+            $destination_number,
+            $text
+        );
+    } catch (Exception $ex) {
+        $module->emError("Exception when sending text with message $ex");
+        return false;
     }
-
-    // if all texts are successfully sent, update the status for each instance
-    if (!empty($send)) {
-        try {
-            $rf->saveAllInstances($record_id, $send, $event_id);
-        } catch (Exception $ex) {
-            $module->emError("Exception throw trying to save sent texts for record $record_id");
-        }
-    }
-
 
     return true;
+}
+
+
+function getPhoneNumForText($phone_field, $phone_event_id)
+{
+    global $module;
+
+    // Retrieve the field name and event
+    $record_field = REDCap::getRecordIdField();
+
+    $data = REDCap::getData('json', null, array($record_field, $phone_field), $phone_event_id);
+    $phone_records = json_decode($data, true);
+
+    // Convert into easy access form {record_id => phone_number}
+    $phone = array();
+    foreach($phone_records as $record_id => $record_info){
+        $phone[$record_info[$record_field]] = $record_info[$phone_field];
+    }
+
+    return $phone;
 }
 
 
@@ -128,11 +142,20 @@ function sendTexts($rf, $record_id, $event_id, $send) {
  * @param $close_offset
  * @param $reminders
  * @param $form_complete_field
- * @return array
  */
-function determineAction($rf, $record_id, $event_id, $data, $close_offset, $reminders, $form_complete_field) {
+function determineAction($rf, $client, $record_id, $event_id, $data, $schedule, $window,
+                         $from_number, $destination_number) {
 
     global $module;
+
+    // Pull data from the config files
+    $close_offset   = $schedule['schedule-close-offset'];
+    $reminders      = $schedule['schedule-reminders'];
+    $text           = $window['text-message'];
+    $text_r1        = $window['text-reminder1-message'];
+    $text_r2        = $window['text-reminder2-message'];
+    $form           = $window['window-form'];
+    $module->emDebug("Text: " . $text . ", reminder 1: " . $text_r1 . ", reminder 2: " . $text_r2);
 
     $close_instances = array();
     $send_text = array();
@@ -142,7 +165,7 @@ function determineAction($rf, $record_id, $event_id, $data, $close_offset, $remi
         $close_yn = windowCheck($instance_info['ema_open_ts'], $close_offset);
         if ($close_yn) {
 
-            // Close dates are based when time has passed. If notification was never sent, set the NOTIFIXATION MISSED status
+            // Close dates are based when time has passed. If notification was never sent, set the NOTIFICATION MISSED status
             if ($instance_info['ema_status'] == EMA::SCHEDULE_CALCULATED) {
                 $close_instances[$instance_id]['ema_status'] = EMA::NOTIFICATION_MISSED;
             } else {
@@ -150,19 +173,25 @@ function determineAction($rf, $record_id, $event_id, $data, $close_offset, $remi
             }
         } else {
 
-            $module->emDebug("Form complete field: " . $form_complete_field, ", and value: " . $instance_info[$form_complete_field]);
             // Now check to see if it is time to send the text
             if ($instance_info['ema_status'] == EMA::SCHEDULE_CALCULATED) {
                 $send_yn =  windowCheck($instance_info['ema_open_ts'], 0);
                 if ($send_yn) {
 
                     // To send the text one by one, send here and if successful, add the notification to the array
-                    // Also need to save the survey link
-                    $send_text[$instance_id]['ema_status'] = EMA::NOTIFICATION_SENT;
+                    // Retrieve link to survey
+                    $survey_link = REDCap::getSurveyLink($record_id, $form, $event_id, $instance_id);
+                    $status = sendText($client, $from_number, $destination_number, $text . ' ' . $survey_link);
+                    if ($status) {
+                        $send_text[$instance_id]['ema_status'] = EMA::NOTIFICATION_SENT;
+                    } else {
+                        $send_text[$instance_id]['ema_status'] = EMA::ERROR_WHEN_SENDING;
+                    }
+
                 }
             } else if ((($instance_info['ema_status'] == EMA::NOTIFICATION_SENT) or
                             ($instance_info['ema_status'] == EMA::REMINDER_1_SENT)) and
-                            ($instance_info[$form_complete_field] <> 2)) {
+                            ($instance_info['ema_status'] <> EMA::SURVEY_COMPLETED)) {
 
                 foreach($reminders as $reminder => $offset) {
 
@@ -172,13 +201,25 @@ function determineAction($rf, $record_id, $event_id, $data, $close_offset, $remi
 
                         // To send the text one by one, send here and if successful, add the notification to the array
                         // Also need to save the survey link
-                        $send_text[$instance_id]['ema_status'] = EMA::REMINDER_1_SENT;
+                        $survey_link = REDCap::getSurveyLink($record_id, $form, $event_id, $instance_id);
+                        $status = sendText($client, $from_number, $destination_number, $text_r1 . ' ' . $survey_link);
+                        if ($status) {
+                            $send_text[$instance_id]['ema_status'] = EMA::REMINDER_1_SENT;
+                        } else {
+                            $send_text[$instance_id]['ema_status'] = EMA::ERROR_WHEN_SENDING;
+                        }
 
                     } else if ($send_yn and ($instance_info['ema_status'] == EMA::REMINDER_1_SENT) and (count($reminders) == 2)) {
 
                         // To send the text one by one, send here and if successful, add the notification to the array
                         // Also need to save the survey link
-                        $send_text[$instance_id]['ema_status'] = EMA::REMINDER_2_SENT;
+                        $survey_link = REDCap::getSurveyLink($record_id, $form, $event_id, $instance_id);
+                        $status = sendText($client, $from_number, $destination_number, $text_r2 . ' ' . $survey_link);
+                        if ($status) {
+                            $send_text[$instance_id]['ema_status'] = EMA::REMINDER_2_SENT;
+                        } else {
+                            $send_text[$instance_id]['ema_status'] = EMA::ERROR_WHEN_SENDING;
+                        }
 
                     }
                 }
@@ -191,15 +232,21 @@ function determineAction($rf, $record_id, $event_id, $data, $close_offset, $remi
         try {
             $rf->saveAllInstances($record_id, $close_instances, $event_id);
 
-            // If sending texts one by one, save new status of the instances where texts were sent
-            //$rf->saveAllInstances($record_id, $send_text, $event_id);
-
         } catch (Exception $ex) {
-            $module->emError("Exception throw trying to save Close Window data");
+            $module->emError("Exception thrown trying to save Close Window data with error message: " . json_encode($ex));
         }
     }
 
-    return $send_text;
+    // If there are instances where we sent out texts, save the status that we've sent them
+    if (!empty($send_text)) {
+        try {
+            $rf->saveAllInstances($record_id, $send_text, $event_id);
+
+        } catch (Exception $ex) {
+            $module->emError("Exception thrown trying to save status update data with error message: " . json_encode($ex));
+        }
+    }
+
 }
 
 /**
@@ -272,8 +319,6 @@ function closeInstancesOptOut($rf, $record_id, $event_id, $form, $data, $window_
  * @return mixed
  */
 function getOptOutValues($event, $record_field, $field) {
-
-    global $module;
 
     // Retrieve the opt-out field for each record.  This is not on a repeating form
     $data = REDCap::getData('json', null, array($record_field, $field), array($event));
@@ -375,12 +420,11 @@ function handleToRFClass($pid, $form) {
  * @param $event
  * @return array
  */
-function getEventNameAndId($event) {
+function getEventNameAndId($all_events, $event) {
 
     global $Proj;
 
     // This is a longitudinal project
-    $all_events = REDCap::getEventNames(true, true);
     $event_ids = array_keys($all_events);
 
     if (!in_array($event, $event_ids)) {

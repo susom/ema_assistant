@@ -16,11 +16,9 @@
 	],
 
 	"permissions": [
-		"redcap_module_system_enable",
-		"redcap_module_project_enable",
-		"redcap_module_save_configuration",
         "redcap_save_record",
-        "redcap_survey_page_top"
+        "redcap_survey_page_top",
+        "redcap_survey_complete"
 	],
 
 	"enable-every-page-hooks-on-system-pages": false,
@@ -52,21 +50,9 @@
 	"project-settings": [
         {
             "key": "use-config-file",
-            "name": "<b>When checked, this config file will be used for source of windows/schedules. Otherwise, the config builder will be used.</b>",
+            "name": "<b>Use config file</b><br>When checked, this config file will be used for source of windows/schedules. Otherwise, the config builder will be used.",
             "required": false,
             "type": "checkbox"
-        },
-        {
-            "key": "cell-phone-field",
-            "name": "<b>Field which stores the cell phone to send texts</b><br>Field in project which stores cell phone number used to text.",
-            "required": true,
-            "type": "field-list"
-        },
-        {
-            "key": "cell-phone-event",
-            "name": "<b>Event which stores the cell phone to send texts</b><br>Event in project which the cell phone field resides.",
-            "required": true,
-            "type": "event-list"
         },
 
         {
@@ -171,6 +157,18 @@
                     "name": "<b>Text for reminder 2 message</b><br>Message for Reminder 2 text message",
                     "required": false,
                     "type": "textarea"
+                },
+                {
+                    "key": "cell-phone-field",
+                    "name": "<b>Cell phone field</b><br>Field in project which stores cell phone number used to text.",
+                    "required": true,
+                    "type": "field-list"
+                },
+                {
+                    "key": "cell-phone-event",
+                    "name": "<b>Cell phone event</b><br>Event in project which the cell phone field resides.",
+                    "required": true,
+                    "type": "event-list"
                 }
             ]
         },
@@ -219,7 +217,24 @@
                 }
             ]
         },
-
+        {
+            "key": "twilio-account-sid",
+            "name": "<b>Twilio Account SID</b>",
+            "required": true,
+            "type": "text"
+        },
+        {
+            "key": "twilio-token",
+            "name": "<b>Twilio Token</b>",
+            "required": true,
+            "type": "text"
+        },
+        {
+            "key": "twilio-from-number",
+            "name": "<b>Twilio From Number</b><br>From number in E164 format, e.g. '+16505551212'",
+            "required": true,
+            "type": "text"
+        },
         {
             "key": "error-email-address",
             "name": "<b>Error Email</b><br>(optional) In the event there is a configuration error or processing error, enter an email address to be notified.",

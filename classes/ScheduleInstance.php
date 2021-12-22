@@ -20,7 +20,7 @@ class ScheduleInstance
     private $window_days = array();
 
     // Record parameters
-    private $pid, $record_id, $phone_number;
+    private $pid, $record_id;
 
     // Schedule parameters
     private $randomize, $start_time;
@@ -38,18 +38,15 @@ class ScheduleInstance
     /**
      * Passes configuration data from the window and schedule configs so the schedules can be created.
      *
-     * @param $pid
      * @param $record_id
-     * @param $window_name
+     * @param $window_config
      * @param $start_date
      * @param $start_time
-     * @param $window_days
-     * @param $form
-     * @param $form_event
+     * @param $form_event_id
      * @param $schedule_config
      */
     public function setUpSchedule($record_id, $window_config, $start_date, $start_time,
-                                    $form_event_id, $phone_number, $schedule_config)
+                                    $form_event_id, $schedule_config)
     {
         // These are window parameters
         $this->window_name              = $window_config['window-name'];
@@ -62,7 +59,6 @@ class ScheduleInstance
         // This is the record we are calculating the window for
         $this->record_id                = $record_id;
         $this->pid                      = $this->module->getProjectId();
-        $this->phone_number             = $phone_number;
 
         // These are the text messages that will be sent
         $this->text_msgs[EMA::NOTIFICATION_SENT] = $window_config['text-message'];
