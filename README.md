@@ -30,27 +30,31 @@ Within a given EMA window you have the following properties:
 - **text-message** -- wording of message to be sent to participant
 - **text-reminder1-message** -- wording of message to be sent as reminder 1 (optional)
 - **text-reminder2-message** -- wording of message to be sent as reminder 2 (optional)
+- **cell-phone-field** - field in project which holds the cell phone number
+- **cell-phone-event** - event where the cell phone field resides
 
 
-There is an EMA schedule which specifies the schedule for each window (linked by **window-schedule-name**):
-Each schedule has the following properies:
+There is also an EMA schedule which specifies the schedule for each window (linked by **window-schedule-name**):
+There may be more than one window configuration that links to the same schedule. Each schedule has the following properies
+which specifies the timing of the window:
 - **schedule-name** -- used to link schedule with window
 - **schedule-offsets** - comma separated list of minutes past midnight when texts are sent
 - **schedule-randomize-window** - if entered, a random number between 0 and this value will be generate to add to offset time
 - **schedule-reminders** - comma separated list of the number of minutes after each text is sent that a reminder will be sent.  Only 2 reminders are currently possible.
 - **schedule-close-offset** - number of minutes after the send time to close the window.
-- **schedule-length** - what is this used for???
 
 ### Scenario Example
-Person A wakes at 6am and the goal is to start the first survey of the day at 8am.  But, if the person wakes at 7am, we may
-want the survey to start at 9am. So, during the baseline survey, we ask them when do you typically wake and store the
-result in a variable. Then, the first survey of the day can be adjusted to the person's schedule.
+Person A wakes at 6am and the goal is to start the first survey of the day at 8am (2hr after the person wakes up).
+The 8am time may be set by entering 480 (minutes) in the <b>schedule-offset-default</b> config entry. Using the default schedule
+offset value will send texts to all your participants using this same starting time.
 
-In this scenario, the first Baseline window would default the start time at 8am but each window after
-Baseline would start the person's customized start window.
+Another scenario might want the person to receive their message within 30 minutes of waking up. In this scenario,
+we can use the custom start time option but specifying a field in the REDCap project which hold the wake time
+for your participants.  This will allow Person A to receive their text at 6:30am and Person B, who wakes up
+up at 7am to receive their first text at 7:30am.
 
-Once we have the starting time for surveys set and we have a text number to send the surveys to and
-the logic to calculate schedules is true, then the schedules will be created for this window.
+Once we have the starting time for surveys determined and we have a text number to send the surveys to and
+the logic to calculate schedules is true, then the rest of the schedule will be created for this window configuration.
 
 The send time for each survey instance will be determined and saved for each instance in the window. As an example,
 if the window has 7 days and there are 4 surveys to be sent per day, then 28 instances of the survey
@@ -72,24 +76,24 @@ The data stored for each instance, is:
     <li>97, Notification Missed</li>
     <li>98, Window Closed</li>
     <li>99, Survey Access After Closed</li>
+    <li>100, Error sending text</li>
     </ul>
-- ema_actions        // Checkboxes for each state?  (s/sent, r1, r2, aoac, x/cancelled, c/closed   missed?)
+- ema_actions        // Not currently set but may be used in the future (s/sent, r1, r2, aoac, x/cancelled, c/closed   missed?)
 
 So, for the activated window, we just created entries for every day and every offset in the schedule (e.g. 7x4=28 instances)
 The instance number is somewhat arbitrary.  If all assessments are in the same repeating form, then they could share one
-redcap event.  Alternately, you could have repeating forms for each event.
+redcap event.  Alternately, you could have repeating forms for multiple events.
 
-# Setup
-To use this External Module, the External Module config must be setup. In the configuration file, the field and event specifying
-the phone number to use is required.  In addition, there is a checkbox option which determines where the configuration
-data is stored and how to load it.
+## Setup
+To use this External Module, the External Module config must be setup. In the configuration file, there is a checkbox option
+which determines where the configuration data is stored and how to load it. When the 'Use config file' checkbox is selected, the
+Window and Schedule configurations will be retrieved from
+the External Module configuration file.  When unchecked, the configurations are loaded by the EMA Config page using the
+link on the left hand sidebar in your project in the External Module section. An example configuration loaded into the EMA
+Config webpage is displayed below.
 
-When the Use config file checkbox is checked, the Window and Schedule configurations will be retrieved from
-the External Module configuration file.  When unchecked, the configurations are loaded by the EMA Config
-webpage in json format. An example configuration loaded into the EMA Config webpage is displayed below.
 
-
-## Example of configurations saved into the EMA Config webpage
+### Example of configurations saved into the EMA Config webpage
 ```
 {
     "windows": [
@@ -109,7 +113,9 @@ webpage in json format. An example configuration loaded into the EMA Config webp
             "schedule-offset-override-event":"baseline_arm_1",       //
             "text-message":"Please feel out this survey",
             "text-reminder1-message":"This is your first reminder to fill out this survey",
-            "text-reminder2-message":"This is your last reminder to fill out this survey"
+            "text-reminder2-message":"This is your last reminder to fill out this survey",
+            "cell-phone-field": "cell_phone",
+            "cell-phone-event": "baseline_event_1"
         }
     ],
     "schedules": [
@@ -118,55 +124,43 @@ webpage in json format. An example configuration loaded into the EMA Config webp
             "schedule-offsets": [0,240,480,720],
             "schedule-randomize-window": 120,
             "schedule-reminders": [5,10],
-            "schedule-close-offset": 20,  // change to duration - length of window open
-            "schedule-length": 100
+            "schedule-close-offset": 20  // change to duration - length of window open
         }
     ]
 }
 ```
+This template can be used as a starting point to build configurations in the EMA Config page.
 
-## Processing
+### Processing
+Each time a record is saved, each window configuration will be evaluated to see if it is time to
+create the window schedule. It is time when the window logic evaluates to true and there is phone
+number entered and the opt-out flag is not set.  At this point, the instances are all created.
 
-This External Module
 
-In REDCap project we will have multiple events with repeating instances.  We need to determine what action needs to be done.
-- We load all windows into memory
-- for each window we get the event where the repeating instruments reside.
-- from the schedule we get the instrument name
-e.g.
-Window: Baseline => [ baseline_arm_1 ], 4x_day => [ ema_survey ],
-Window: Month 1 =>  [ month_1 ]       , 4x_day => [ ema_survey ]
-
-We then need to query the ema_survey instruments in those events to determine if we need to send...
-- get all records where ema_open_ts <= now AND window is not closed...
-- we then loop through all those record-instances, sorted by record.
-
-We need to load the contact information for each record into memory along with any variables required to do cancel logic
-for the window...
-
-For each record-instance, we
- - use window name to check window kill logic against record - if kill is true, we mark invitation as cancelled and closed.
-   - returns record and instances
- - if delta is greater than window, then mark as window closed.
- - if invitation is not sent and it is less than the close time for the EMA?, we send and mark as sent.
- - if delta between ema_open_ts and now is <= reminders, then mark and send reminders
-
-On record-save event, we need to evaluate if logic is true to trigger creation of EMA surveys for windows.
-- Do we need to be able to delete/clear all entries for a window (what if something changes?)
-
-Need to use tool for dealing with instances of forms
-
-SMS invitations...
-
-## Cron Scheduler
+### Cron Scheduler
 The cron schedule runs every 5 minutes to determine if messages need to be sent.
 
 The scheduler will look through all configurations and check all instances for actions that need to be performed.
-Since the send time is the only timestamp that stored with each instance of the survey, the configurations
-will be loaded and and the close window time will be calculated to see if any instance should be closed. Since
-this close window is calculated at each checkpoint, any changes to the close window will go to into effect
+Since the send time is the only timestamp that is stored with each instance of the survey, the configurations
+will be loaded and the close window time will be calculated to see if any instance should be closed. Since
+this close window is calculated at each checkpoint, any changes to the close window setup time will go into effect
 immediately.  For instance, suppose participants are given 15 minutes to complete the survey before the survey is closed but you decide to
-extend the survey window to 30 minutes, you can make the change to the configuration.  The next time
-the scheduler runs, it will wait 30 minutes before closing the survey.
+extend the survey window to 30 minutes. You can make the change to the configuration and the next time
+the scheduler runs, it will use the 30 minutes offset before closing the survey.
 
-## Survey Check
+When survey times pass, a text message will be sent using Twilio. The body of the text can be specified
+in the config file and the link to the survey will be appended.
+
+The cron also checks to see if reminders are ready to be sent and if so, they will be sent also.
+
+### Survey Check
+When participants click on the survey link they receive in text, the timestamp of the close window
+offset will be checked to make sure that the survey is still open for the participant.  If the close
+window offset has passed, the participant will receive a message to tell them the survey is closed. The status
+of the survey will also be changed to "Survey Access After Closed".
+Otherwise, the participant will be able to complete the survey.
+
+Once the survey has been taken, the ema_status field will be changed to 'Closed: Survey Completed'.
+
+### Twilio credentials
+Twilio credentials (phone number, sid, token) are required in the EM Configuration file.

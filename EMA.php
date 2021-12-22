@@ -41,9 +41,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
                                        $survey_hash, $response_id, $repeat_instance) {
 
         // Check to see if it is time to create EMA instances specified by the configs
-        //$this->checkWindowScheduleCalculator($project_id, $record);
-
-        $this->checkForMessagesToSend();
+        $this->checkWindowScheduleCalculator($project_id, $record);
 
    }
 

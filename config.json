@@ -12,7 +12,12 @@
 			"name": "Andrew Martin",
 			"email": "andy123@stanford.edu",
 			"institution": "Stanford University"
-		}
+		},
+        {
+            "name": "Lee Ann Yasukawa",
+            "email": "yasukawa@stanford.edu",
+            "institution": "Stanford University"
+        }
 	],
 
 	"permissions": [
@@ -47,7 +52,17 @@
         "pages/SendMessages"
 	],
 
-	"project-settings": [
+    "crons": [
+        {
+            "cron_name": "ema_send_texts",
+            "cron_description": "This cron will run every 5 minutes and check to see if there are texts to send",
+            "method": "checkForMessagesToSend",
+            "cron_frequency": "300",
+            "cron_max_run_time": "3600"
+        }
+    ],
+
+    "project-settings": [
         {
             "key": "use-config-file",
             "name": "<b>Use config file</b><br>When checked, this config file will be used for source of windows/schedules. Otherwise, the config builder will be used.",
