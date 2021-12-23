@@ -33,6 +33,8 @@ try {
 // Loop over each window configuration
 foreach($windows as $window) {
 
+    $module->emDebug("Loop over window "  . $window['window-name']);
+
     //Instantiate the RepeatingForm class
     $rf = handleToRFClass($pid, $window['window-form']);
 
@@ -56,6 +58,7 @@ foreach($windows as $window) {
         [$event_name, $event_id] = getEventNameAndId($all_events, $window['window-form-event']);
         $form = $window['window-form'];
         $window_name = $window['window-name'];
+        $module->emDebug("Record id $record_id");
 
         // Retrieve the data for this record
         $data = getRepeatingData($rf, $record_id, $is_longitudinal, $event_name, $event_id, $form, $window_name);
@@ -64,7 +67,6 @@ foreach($windows as $window) {
             // If the opt out flag is set, close out these instances
             if ($opt_out_value == EMA::OPT_OUT_VALUE)
             {
-                $module->emDebug("Opt out for record $record_id, window name: $window_name");
                 $status = closeInstancesOptOut($rf, $record_id, $event_id, $form, $data, $window_name);
 
             } else {
@@ -74,7 +76,6 @@ foreach($windows as $window) {
                 determineAction($rf, $client, $record_id, $event_id, $data, $schedule, $window, $from_number, $phones[$record_id]);
             }
         }
-        break;
     }
 }
 
@@ -155,7 +156,6 @@ function determineAction($rf, $client, $record_id, $event_id, $data, $schedule, 
     $text_r1        = $window['text-reminder1-message'];
     $text_r2        = $window['text-reminder2-message'];
     $form           = $window['window-form'];
-    $module->emDebug("Text: " . $text . ", reminder 1: " . $text_r1 . ", reminder 2: " . $text_r2);
 
     $close_instances = array();
     $send_text = array();
@@ -180,6 +180,7 @@ function determineAction($rf, $client, $record_id, $event_id, $data, $schedule, 
 
                     // To send the text one by one, send here and if successful, add the notification to the array
                     // Retrieve link to survey
+                    $module->emDebug("Project " . $module->getProjectId() . ", record $record_id, instance $instance_id is ready for Orig text" );
                     $survey_link = REDCap::getSurveyLink($record_id, $form, $event_id, $instance_id);
                     $status = sendText($client, $from_number, $destination_number, $text . ' ' . $survey_link);
                     if ($status) {
@@ -201,6 +202,7 @@ function determineAction($rf, $client, $record_id, $event_id, $data, $schedule, 
 
                         // To send the text one by one, send here and if successful, add the notification to the array
                         // Also need to save the survey link
+                        $module->emDebug("Project " . $module->getProjectId() . ", record $record_id, instance $instance_id is ready for Reminder 1 text");
                         $survey_link = REDCap::getSurveyLink($record_id, $form, $event_id, $instance_id);
                         $status = sendText($client, $from_number, $destination_number, $text_r1 . ' ' . $survey_link);
                         if ($status) {
@@ -213,6 +215,7 @@ function determineAction($rf, $client, $record_id, $event_id, $data, $schedule, 
 
                         // To send the text one by one, send here and if successful, add the notification to the array
                         // Also need to save the survey link
+                        $module->emDebug("Project " . $module->getProjectId() . ", record $record_id, instance $instance_id is ready for Reminder 2 text");
                         $survey_link = REDCap::getSurveyLink($record_id, $form, $event_id, $instance_id);
                         $status = sendText($client, $from_number, $destination_number, $text_r2 . ' ' . $survey_link);
                         if ($status) {
@@ -378,7 +381,8 @@ function getRepeatingData($rf, $record_id, $is_longitudinal, $event_name, $event
     // this section can be deleted
     $filter_instances = array();
     foreach ($all_instances as $instance_id => $instance_info) {
-        if (($instance_info['ema_status'] != EMA::WINDOW_CLOSED) and ($instance_info['ema_status'] != EMA::NOTIFICATION_MISSED)) {
+        if (($instance_info['ema_status'] != EMA::WINDOW_CLOSED) and ($instance_info['ema_status'] != EMA::NOTIFICATION_MISSED)
+                and ($instance_info['ema_status'] != EMA::ACCESS_AFTER_CLOSED) and ($instance_info['ema_status'] != EMA::SURVEY_COMPLETED)) {
             $filter_instances[$instance_id] = $instance_info;
         }
     }
