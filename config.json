@@ -7,6 +7,8 @@
 
 	"documentation": "README.md",
 
+    "framework-version": 7,
+
 	"authors": [
 		{
 			"name": "Andrew Martin",
@@ -31,10 +33,10 @@
 	"links": {
 		"project": [
             {
-                "name": "EMA Randomizer",
+                "name": "EMA Utils",
                 "icon": "fas fa-random",
-                "url": "pages/generator.php",
-                "show-header-and-footer": true
+                "url": "pages/utils.php",
+                "show-header-and-footer": false
             },
             {
                 "name": "EMA Config",
@@ -65,7 +67,7 @@
     "project-settings": [
         {
             "key": "use-config-file",
-            "name": "<b>Use config file</b><br>When checked, this config file will be used for source of windows/schedules. Otherwise, the config builder will be used.",
+            "name": "<b>Use config file</b><br>When checked, the windows and schedules for this module are defined using the JSON specified by the EMA Config page on the left sidebar.  If not checked, then the windows and schedules must be defined below.",
             "required": false,
             "type": "checkbox"
         },
@@ -231,6 +233,11 @@
                     "type": "text"
                 }
             ]
+        },
+        {
+            "key": "twilio-header",
+            "name": "<b><u>Twilio Configuration</u></b>",
+            "type": "descriptive"
         },
         {
             "key": "twilio-account-sid",

@@ -1,5 +1,6 @@
 <?php
 namespace Stanford\EMA;
+
 /** @var EMA $module */
 
 /**
@@ -48,11 +49,23 @@ if (!empty($_POST['action'])) {
 $b = new \Browser();
 $cmdKey = ( $b->getPlatform() == "Apple" ? "&#8984;" : "Ctrl" );
 require_once APP_PATH_DOCROOT . 'ProjectGeneral/header.php';
+
 ?>
     <div class="panel panel-primary">
-        <div class="panel-heading">
+        <div class="panel-heading pb-2">
             <strong><?php echo $module->getModuleName() ?> Configuration</strong>
         </div>
+        <?php
+            $use_config_file = $module->getProjectSetting('use-config-file');
+            if (!$use_config_file) {
+                ?>
+                <div class="alert alert-danger text-center">
+                    This configuration is not currently being used.  To use this configuration you must uncheck the `use-config-file`
+                    option in the External Module setup.
+                </div>
+                <?php
+            }
+        ?>
         <div class="panel-body config-editor">
             <div id='config_editor' data-editor="ace" data-mode="json" data-theme="clouds"></div>
         </div>
