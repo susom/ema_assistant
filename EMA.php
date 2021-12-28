@@ -5,13 +5,11 @@ use REDCap;
 use Exception;
 use ExternalModules\ExternalModules;
 use GuzzleHttp;
-use Stanford\SurveyDashboard\SurveyDashboard;
 
 require_once "emLoggerTrait.php";
 require_once "classes/ScheduleInstance.php";
 require_once "classes/RepeatingForms.php";
 require_once APP_PATH_DOCROOT . "/Libraries/Twilio/Services/Twilio.php";
-
 
 class EMA extends \ExternalModules\AbstractExternalModule {
 
@@ -175,9 +173,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
      * Read the current config from a single key-value pair in the external module settings table
      */
     function getConfigAsString() {
-
         $string_config = $this->getProjectSetting($this->PREFIX . '-config');
-        //SurveyDashboard::log($string_config);
 
         return $string_config;
     }
@@ -212,7 +208,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 
         // Find the source of the configurations: config file or config builder
         $config_source = $this->getProjectSetting('use-config-file');
-        if ($config_source) {
+        if (!$config_source) {
 
             $windows = array();
             foreach($window_config_fields as $field) {
@@ -282,6 +278,8 @@ class EMA extends \ExternalModules\AbstractExternalModule {
         // Retrieve the data for this record
         $record_data = $this->getRedcapRecord($project_id, $record);
 
+        // $this->emDebug($windows, $schedules, $record_data);
+
         // Loop over each config to see if this schedule is ready to process
         foreach ($windows as $config) {
 
@@ -295,7 +293,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 
                 // See if the ready logic has been met
                 $ready = REDCap::evaluateLogic($config['window-trigger-logic'], $project_id, $record);
-                $this->emDebug("Is this ready? " . $ready);
+                $this->emDebug("Is this ready? ", $ready);
                 if ($ready) {
 
                     // Check that window-opt-out-field is not equal to 1
@@ -304,11 +302,12 @@ class EMA extends \ExternalModules\AbstractExternalModule {
                     $this->emDebug("Opt out value: " . $opt_out);
                     if (!$opt_out) {
 
-                        // Get all instances of the window-form/window-event instrument and check that there are not already instances of the window-name in those instances...
+                        // Get all instances of the window-form/window-event instrument and check that there are not already
+                        // instances of the window-name in those instances...
                         $form_event_id = $this->convertEventToID($all_events, $config['window-form-event'], $is_longitudinal);
                         $alreadyCreated = $this->scheduleAlreadyExists($record_data[$record], $config['window-form'],
                             $form_event_id, $config['window-name']);
-                        $this->emDebug("Schedule already exists? " . $alreadyCreated);
+                        $this->emDebug("Does schedule for window " . $config['window-name'] . " already exist? " . (string) $alreadyCreated);
                         if (!$alreadyCreated) {
 
                             $schedule = $this->findScheduleForThisWindow($config['window-schedule-name'], $schedules);
@@ -327,6 +326,85 @@ class EMA extends \ExternalModules\AbstractExternalModule {
             }
         }
     }
+
+
+
+    /**
+     * This is a utility function to find all existing incomplete instances of the repeating window form and try
+     * to delete them.  It can be called with the window (to affect a deletion) or without a window to return a
+     * summary of each window and how many instances would be deleted.  This is used by the util page.
+     * @param $project_id
+     * @param $record
+     * @param $window
+     * @return array
+     */
+    public function deleteIncompleteInstancesByWindow($project_id, $record, $window = null)
+    {
+        // Find event name for the event we are saving
+        $is_longitudinal = REDCap::isLongitudinal();
+        $all_events = REDCap::getEventNames(true, true);
+
+        // Retrieve configurations either from the config file or config builder
+        [$windows, $schedules] = $this->getConfigAsArrays();
+
+        // Retrieve the data for this record
+        $data = $this->getRedcapRecord($project_id, $record);
+        $record_data = $data[$record];
+
+        global $Proj;
+        $results = [];
+
+        // Loop over each config to see if this schedule is ready to process
+        foreach ($windows as $config) {
+            // Get all instances of the window-form/window-event instrument and check that there are not already
+            // instances of the window-name in those instances...
+            $form_name = $config['window-form'];
+            $form_event_id = $this->convertEventToID($all_events, $config['window-form-event'], $is_longitudinal);
+
+            // We need to determine if the form with the data is a repeating form or a repeating event
+            $repeatingForms = $Proj->RepeatingFormsEvents;
+            $repeat_type = $repeatingForms[$form_event_id];
+            if ($repeat_type == 'WHOLE') {
+                $form_data = $record_data['repeat_instances'][$form_event_id][''];
+            } else {
+                $form_data = $record_data['repeat_instances'][$form_event_id][$form_name];
+            }
+
+            $complete_field = $form_name . "_complete";
+
+            $count_total = 0;
+            $count_incomplete = 0;
+            $count_deleted = 0;
+
+            $RF = new RepeatingForms($this->getProjectId(),$form_name);
+            foreach($form_data as $instance => $instance_data) {
+                $count_total++;
+                $window_name = $instance_data['ema_window_name'];
+                $window_status = $instance_data[$complete_field];
+                if($window_status !== "2") {
+                    $count_incomplete++;
+
+                    if ($window === $window_name) {
+                        // Delete this instance
+                        $log_id = $RF->deleteInstance($record, $instance, $form_event_id);
+                        $count_deleted++;
+                        $this->emDebug("Deleted Instance $instance with log enter $log_id");
+                    }
+                }
+
+
+            }
+
+            $results[] = [
+                "name" => $config['window-name'],
+                "count" => $count_total,
+                "incomplete" => $count_incomplete,
+                "deleted" => $count_deleted
+            ];
+        }
+        return $results;
+    }
+
 
 
     /**
@@ -358,7 +436,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
      * This function checks to see if there are already instances created with this Window Name.  If so, don't
      * create more instances.
      *
-     * @param $data
+     * @param $data // Record array from getData
      * @param $form_name
      * @param $form_event_id
      * @param $window_name
@@ -397,7 +475,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
      * @param $all_events
      * @param $event
      * @param $is_longitudinal
-     * @return event_id
+     * @return int $event_id
      */
     private function convertEventToID($all_events, $event, $is_longitudinal) {
 
