@@ -35,19 +35,20 @@ foreach($windows as $window) {
 
     $module->emDebug("Loop over window "  . $window['window-name']);
 
-    //Instantiate the RepeatingForm class
+    // Instantiate the RepeatingForm class
     $rf = handleToRFClass($pid, $window['window-form']);
 
     // Find the phone number in REDCap for all records
     [$phone_event_name, $phone_event_id] = getEventNameAndId($all_events, $window['cell-phone-event']);
+    // TODO: Can we filter this based on records that are impacted in initial query to be more efficient?
     $phones = getPhoneNumForText($window['cell-phone-field'], $phone_event_id);
 
     // Find the schedule configuration for this window configuration
     $schedule_name = $window['window-schedule-name'];
     $schedule = $module->findScheduleForThisWindow($schedule_name, $schedules);
 
-
     // Retrieve the opt-out field
+    // TODO: This is another full query -- is this necessary?
     $records = getOptOutValues($window['window-opt-out-event'], $record_field, $window['window-opt-out-field']);
 
     // Loop over each record and check if any texts need to be sent
@@ -61,6 +62,7 @@ foreach($windows as $window) {
         $module->emDebug("Record id $record_id");
 
         // Retrieve the data for this record
+        // TODO: Another full db query here...  to be removed
         $data = getRepeatingData($rf, $record_id, $is_longitudinal, $event_name, $event_id, $form, $window_name);
         if (count($data) > 0) {
 
@@ -108,10 +110,14 @@ function sendText($client, $from_number, $destination_number, $text) {
 }
 
 
+/**
+ * Get phone numbers for all records
+ * @param $phone_field
+ * @param $phone_event_id
+ * @return array record_id=>phone_number
+ */
 function getPhoneNumForText($phone_field, $phone_event_id)
 {
-    global $module;
-
     // Retrieve the field name and event
     $record_field = REDCap::getRecordIdField();
 
@@ -188,7 +194,6 @@ function determineAction($rf, $client, $record_id, $event_id, $data, $schedule, 
                     } else {
                         $send_text[$instance_id]['ema_status'] = EMA::ERROR_WHEN_SENDING;
                     }
-
                 }
             } else if ((($instance_info['ema_status'] == EMA::NOTIFICATION_SENT) or
                             ($instance_info['ema_status'] == EMA::REMINDER_1_SENT)) and
