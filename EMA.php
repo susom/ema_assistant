@@ -71,25 +71,22 @@ class EMA extends \ExternalModules\AbstractExternalModule {
      */
     private function setSurveyCompleteStatus($project_id, $record, $instrument, $event_id, $repeat_instance) {
 
-        // If this form is part of a configuration, set the status to Survey Complete
-        $update['ema_status'] = EMA::SURVEY_COMPLETED;
-
         try {
             // Retrieve the data on this form
-            $rf = new RepeatingForms($project_id, $instrument);
-            $instance = $rf->getInstanceById($record, $repeat_instance, $event_id);
+            $rf = new RepeatingForms($instrument, $event_id);
+            $instance = $rf->getInstanceById($record, $repeat_instance);
 
             // See if the status field exists on this form and if so, update the status
             if (array_key_exists('ema_status', $instance)) {
 
-                $rf->saveInstance($record, $update, $repeat_instance, $event_id);
-                $this->emDebug("Return message: " . $rf->last_error_message);
+                // If this form is part of a configuration, set the status to Survey Complete
+                $update['ema_status'] = EMA::SURVEY_COMPLETED;
+                $rf->saveInstance($record, $repeat_instance, $update);
+                $this->emDebug("Survey Complete Save Return message: " . $rf->last_error_message);
             }
-
         } catch (Exception $ex) {
             $this->emError("Cannot save Survey Complete status with error: " . json_encode($ex));
         }
-
     }
 
 
@@ -108,8 +105,8 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 
         // Retrieve the data for this instance
         try {
-            $rf = new RepeatingForms($project_id, $instrument);
-            $instance = $rf->getInstanceById($record, $repeat_instance, $event_id);
+            $rf = new RepeatingForms($instrument, $event_id);
+            $instance = $rf->getInstanceById($record, $repeat_instance);
         } catch (Exception $ex) {
             $this->emError("Exception when trying to instance repeating Form Class with message" . json_encode($ex));
             return false;
@@ -140,7 +137,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 
                         // Set the status that the participant tried to access the survey after close
                         $instance['ema_status'] = EMA::ACCESS_AFTER_CLOSED;
-                        $rf->saveInstance($record, $instance, $repeat_instance, $event_id);
+                        $rf->saveInstance($record, $repeat_instance, $instance);
                         $this->emDebug("Closed survey for project $project_id, record $record, form $instrument, event $event_id, instance $repeat_instance");
 
                         // Hide the normal container
@@ -376,8 +373,8 @@ class EMA extends \ExternalModules\AbstractExternalModule {
             $count_incomplete = 0;
             $count_deleted = 0;
 
-            $RF = new RepeatingForms($this->getProjectId(),$form_name);
-            foreach($form_data as $instance => $instance_data) {
+            $RF = new RepeatingForms($form_name, $form_event_id);
+            foreach($form_data as $instance_id => $instance_data) {
                 $count_total++;
                 $window_name = $instance_data['ema_window_name'];
                 $window_status = $instance_data[$complete_field];
@@ -386,9 +383,9 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 
                     if ($window === $window_name) {
                         // Delete this instance
-                        $log_id = $RF->deleteInstance($record, $instance, $form_event_id);
+                        $log_id = $RF->deleteInstance($record, $instance_id);
                         $count_deleted++;
-                        $this->emDebug("Deleted Instance $instance with log enter $log_id");
+                        $this->emDebug("Deleted Instance $instance_id with log enter $log_id");
                     }
                 }
 
