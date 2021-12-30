@@ -391,8 +391,12 @@ class RepeatingForms
             $next_instance_id = $instance_id;
         }
 
+        // Check to see if this event is repeating or just the form is repeating
+        $repeating_events = $this->Proj->getRepeatingFormsEvents();
+        $repeat_instrument = ($repeating_events[$event_id] == 'WHOLE' ? '' : $this->instrument);
+
         // Include instance and format into REDCap expected format
-        $new_instance[$record_id]['repeat_instances'][$event_id][$this->instrument][$next_instance_id] = $data;
+        $new_instance[$record_id]['repeat_instances'][$event_id][$repeat_instrument][$next_instance_id] = $data;
 
         $return = REDCap::saveData($this->pid, 'array', $new_instance);
         if (!isset($return["errors"]) and ($return["item_count"] <= 0)) {
@@ -413,8 +417,12 @@ class RepeatingForms
             $event_id = $this->event_id;
         }
 
+        // Check to see if this event is repeating or just the form is repeating
+        $repeating_events = $this->Proj->getRepeatingFormsEvents();
+        $repeat_instrument = ($repeating_events[$event_id] == 'WHOLE' ? '' : $this->instrument);
+
         // Include instance and format into REDCap expected format
-        $new_instance[$record_id]['repeat_instances'][$event_id][$this->instrument] = $data;
+        $new_instance[$record_id]['repeat_instances'][$event_id][$repeat_instrument] = $data;
 
         $return = REDCap::saveData($this->pid, 'array', $new_instance);
         if (!isset($return["errors"]) and ($return["item_count"] <= 0)) {
