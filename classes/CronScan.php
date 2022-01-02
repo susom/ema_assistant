@@ -136,14 +136,12 @@ class CronScan
                         switch ($ema_status) {
                             case EMA::SCHEDULE_CALCULATED:
                                 // Send invite
-                                // TODO: SEND INVITE
                                 $outbound_sms = $window_text_message;
                                 $new_status = EMA::NOTIFICATION_SENT;
                                 break;
                             case EMA::NOTIFICATION_SENT:
                                 // Check if ready for reminder 1
                                 if (!empty($reminders[0]) && $age_in_min >= $reminders[0]) {
-                                    // TODO: Send Reminder 1
                                     $outbound_sms = $window_reminder_1;
                                     $new_status = EMA::REMINDER_1_SENT;
                                 }
@@ -151,7 +149,6 @@ class CronScan
                             case EMA::REMINDER_1_SENT:
                                 // Check if ready for reminder 2
                                 if (!empty($reminders[1]) && $age_in_min >= $reminders[1]) {
-                                    // TODO: Send Reminder 2
                                     $outbound_sms = $window_reminder_2;
                                     $new_status = EMA::REMINDER_2_SENT;
                                 }
@@ -169,23 +166,25 @@ class CronScan
                 if (!empty($outbound_sms)) {
                     // Append Survey URL
                     $survey_link = REDCap::getSurveyLink($record_id, $window_form, $window_form_event_id, $instance_id);
-                    $outbound_sms .= " ($record_id-$instance_id)";  // DEBUG
+                    // $outbound_sms .= " ($record_id-$instance_id)";  // DEBUG
                     $outbound_sms .= " $survey_link";
 
                     // Get the To Number
                     $to_number = $this->getDataValue($record_id, $cell_phone_event_id, $cell_phone_field);
                     if (empty($to_number)) {
-                        $instance_data['ema_log'] = (empty($instance_data['ema_log']) ? '' : "\n") . "[" . date("Y-m-d H:i:s ") . "] Missing cell phone number in $cell_phone_field";
                         $new_status = EMA::ERROR_WHEN_SENDING;
+                        $instance_data = $this->appendEmaLog($instance_data, "Missing cell phone number in $cell_phone_field");
                     } else {
                         $ts_start = microtime(true);
                         $result = $this->module->sendTwilioMessage($to_number, $outbound_sms);
                         $ts_duration = microtime(true) - $ts_start;
                         if ($result === false) {
                             $new_status = EMA::ERROR_WHEN_SENDING;
-                            $instance_data['ema_log'] = (empty($instance_data['ema_log']) ? '' : "\n") . "[" . date("Y-m-d H:i:s ") . "] Missing cell phone number in $cell_phone_field";
+                            $instance_data = $this->appendEmaLog($instance_data, "Error sending sms message");
+                            $this->module->emDebug("$record_id-$instance_id SMS failure in $ts_duration sec: $outbound_sms");
                         }
                         $this->module->emDebug("$record_id-$instance_id SMS sent (" . json_encode($result) . ") in $ts_duration sec: $outbound_sms");
+                        \REDCap::logEvent("EMA SMS Sent", $outbound_sms,"", $record_id);
                     }
                 }
 
@@ -204,6 +203,21 @@ class CronScan
                 }
             }
         }
+    }
+
+
+    /**
+     * Append a log entry to the ema_log field and return the instance_data again
+     * @param array $instance_data
+     * @param string $msg
+     * @param bool $prefix_with_date
+     * @return array
+     */
+    private function appendEmaLog($instance_data, $msg, $prefix_with_date = true) {
+        $suffix = ( empty($instance_data['ema_log']) ? '' : "\n" . $instance_data['ema_log']);
+        $prefix = $prefix_with_date ? "[" . date("Y-m-d H:i:s ") . "] " : '';
+        $instance_data['ema_log'] = $prefix . $msg . $suffix;
+        return $instance_data;
     }
 
 
