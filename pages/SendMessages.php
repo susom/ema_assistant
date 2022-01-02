@@ -2,6 +2,24 @@
 namespace Stanford\EMA;
 /** @var \Stanford\EMA\EMA $module */
 
+$cs = new CronScan($module);
+// echo "<pre>" . print_r($cs,true) . "</pre>";
+try {
+    $module->emDebug("Running CronScan");
+    $cs->scanWindows();
+} catch (Exception $e) {
+    $module->emError("Exception in CronScan:", $e->getMessage());
+}
+
+
+
+// $module->emDebug("Cancelling sendMessages.php while testing CronScan method");
+exit();
+
+
+
+
+
 use REDCap;
 use Exception;
 require_once $module->getModulePath() . "./classes/RepeatingForms.php";
@@ -36,7 +54,7 @@ foreach($windows as $window) {
     $module->emDebug("Loop over window "  . $window['window-name']);
 
     // Instantiate the RepeatingForm class
-    $rf = handleToRFClass($pid, $window['window-form']);
+    $rf = handleToRFClass($window['window-form'], $window['window-form-event']);
 
     // Find the phone number in REDCap for all records
     [$phone_event_name, $phone_event_id] = getEventNameAndId($all_events, $window['cell-phone-event']);
@@ -238,7 +256,7 @@ function determineAction($rf, $client, $record_id, $event_id, $data, $schedule, 
     // If there are instances that are past their close time, save the status
     if (!empty($close_instances)) {
         try {
-            $rf->saveAllInstances($record_id, $close_instances, $event_id);
+            $rf->saveAllInstances($record_id, $close_instances);
 
         } catch (Exception $ex) {
             $module->emError("Exception thrown trying to save Close Window data with error message: " . json_encode($ex));
@@ -248,7 +266,7 @@ function determineAction($rf, $client, $record_id, $event_id, $data, $schedule, 
     // If there are instances where we sent out texts, save the status that we've sent them
     if (!empty($send_text)) {
         try {
-            $rf->saveAllInstances($record_id, $send_text, $event_id);
+            $rf->saveAllInstances($record_id, $send_text);
 
         } catch (Exception $ex) {
             $module->emError("Exception thrown trying to save status update data with error message: " . json_encode($ex));
@@ -341,7 +359,7 @@ function getOptOutValues($event, $record_field, $field) {
  * any instances that are closed but the filter is not working correctly (or I am not setting up the filter
  * correctly) so I have to manually filter them out.
  *
- * @param $rf
+ * @param RepeatingForms $rf
  * @param $record_id
  * @param $is_longitudinal
  * @param $event_name
@@ -369,8 +387,8 @@ function getRepeatingData($rf, $record_id, $is_longitudinal, $event_name, $event
     try {
 
         // Add option to load only certain fields so we don't have to retrieve the whole form
-        $rf->loadData($record_id, $event_id, $filter);
-        $instances = $rf->getAllInstances($record_id, $event_id);
+        $rf->loadData($record_id, $filter);
+        $instances = $rf->getAllInstances($record_id);
 
         if ($is_longitudinal) {
             $all_instances  = $instances[$record_id][$event_id];
@@ -400,11 +418,11 @@ function getRepeatingData($rf, $record_id, $is_longitudinal, $event_name, $event
 /**
  * This function instantiate the Repeating Form class and that handle will be used to save repeating form data.
  *
- * @param $pid
  * @param $form
+ * @param $event_id
  * @return false|RepeatingForms
  */
-function handleToRFClass($pid, $form) {
+function handleToRFClass($form, $event_id) {
 
     global $module;
 
@@ -412,7 +430,7 @@ function handleToRFClass($pid, $form) {
     try {
 
         // Add option to load only certain fields so we don't have to retrieve the whole form
-        $rf = new RepeatingForms($pid, $form);
+        $rf = new RepeatingForms($form, $event_id);
     } catch (Exception $ex) {
         $module->emError("Exception when instantiating RepeatingForms");
         return false;

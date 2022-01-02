@@ -9,7 +9,7 @@ require_once "classes/RepeatingForms.php";
 /**
  * ScheduleInstance
  *
- * @property \Stanford\EMA\EMA $module
+ * @property EMA $module
  */
 class ScheduleInstance
 {
@@ -96,8 +96,8 @@ class ScheduleInstance
 
         // Instantiate the repeating form helper class
         try {
-            $rf = new RepeatingForms($this->pid, $this->form);
-            $next_instance_id = $rf->getNextInstanceId($this->record_id, $this->form_event_id);
+            $rf = new RepeatingForms($this->form, $this->form_event_id);
+            $next_instance_id = $rf->getNextInstanceId($this->record_id);
         } catch (Exception $ex) {
             $this->module->emError("Exception when instantiating RepeatingForms class");
             return;
@@ -123,7 +123,7 @@ class ScheduleInstance
 
             // Save this info on the instrument specified
             $instance_id = $next_instance_id++;
-            $status = $rf->saveInstance($this->record_id, $saveSched, $instance_id, $this->form_event_id);
+            $status = $rf->saveInstance($this->record_id, $instance_id,  $saveSched);
             if (!$status) {
                 $message = $rf->last_error_message();
                 $this->emError("Error when saving data for window $this->window_name, record $this->record_id with message: " . $message);

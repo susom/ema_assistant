@@ -218,14 +218,13 @@ class RepeatingForms
     public function getInstanceById($record_id, $instance_id)
     {
         $this->verifyRecordDataLoaded($record_id);
-        $data = $this->data[$record_id][$this->event_id];
 
-        if (!isset($data[$instance_id])) {
+        if (!isset($this->data[$record_id][$this->event_id][$instance_id])) {
             // There is no instance data
             $this->last_error_message = "Instance number invalid";
             return false;
         } else {
-            return $data[$instance_id];
+            return $this->data[$record_id][$this->event_id][$instance_id];
         }
     }
 
@@ -429,5 +428,13 @@ class RepeatingForms
         } else {
             throw new Exception("Invalid repeat context for $this->instrument in event $this->event_id");
         }
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getRecordId()
+    {
+        return $this->record_id;
     }
 }
