@@ -61,8 +61,8 @@ class ScheduleInstance
         $this->pid                      = $this->module->getProjectId();
 
         // These are the text messages that will be sent
-        $this->text_msgs[EMA::NOTIFICATION_SENT] = $window_config['text-message'];
-        $this->text_msgs[EMA::REMINDER_1_SENT] = $window_config['text-reminder1-message'];
+        $this->text_msgs[EMA::STATUS_OPEN_SMS_SENT] = $window_config['text-message'];
+        $this->text_msgs[EMA::STATUS_REMINIDER_1_SENT] = $window_config['text-reminder1-message'];
         $this->text_msgs[EMA::REMINDER_2_SENT] = $window_config['text-reminder2-message'];
 
         // This is the schedule configuration to determine days/times of surveys
@@ -119,7 +119,7 @@ class ScheduleInstance
             $saveSched['ema_offset']        = $offset;
             $saveSched['ema_open']          = $this->start_time + $rand_time + $offset;
             $saveSched['ema_open_ts']       = $this->addMinutesToDate($start_date, $saveSched['ema_open']);
-            $saveSched['ema_status']        = EMA::SCHEDULE_CALCULATED;
+            $saveSched['ema_status']        = EMA::STATUS_SCHEDULED;
 
             // Save this info on the instrument specified
             $instance_id = $next_instance_id++;

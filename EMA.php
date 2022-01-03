@@ -19,17 +19,17 @@ class EMA extends \ExternalModules\AbstractExternalModule {
     const MINUTE_RESOLUTION         = 5;
 
     // EMA Notification Statuses
-    const SCHEDULE_CALCULATED        = 1;
-    const NOTIFICATION_SENT          = 2;
-    const REMINDER_1_SENT            = 3;
-    const REMINDER_2_SENT            = 4;
-    const SURVEY_COMPLETED           = 96;
-    const NOTIFICATION_MISSED        = 97;
-    const WINDOW_CLOSED              = 98;
-    const ACCESS_AFTER_CLOSED        = 99;
-    const ERROR_WHEN_SENDING         = 100;
+    const STATUS_SCHEDULED          = 1;
+    const STATUS_OPEN_SMS_SENT      = 2;
+    const STATUS_REMINIDER_1_SENT   = 3;
+    const STATUS_REMINIDER_2_SENT   = 4;
+    const STATUS_COMPLETED          = 96;
+    const STATUS_INSTANCE_SKIPPED   = 97;
+    const STATUS_WINDOW_CLOSED      = 98;
+    const STATUS_OPEN_AFTER_CLOSE   = 99;
+    const STATUS_SEND_ERROR         = 100;
+    const STATUS_OPTED_OUT          = 101;
 
-    const OPT_OUT_VALUE              = 1;
 
     private $twilio_client;
     private $from_number;
@@ -85,7 +85,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
             if (array_key_exists('ema_status', $instance)) {
 
                 // If this form is part of a configuration, set the status to Survey Complete
-                $update['ema_status'] = EMA::SURVEY_COMPLETED;
+                $update['ema_status'] = EMA::STATUS_COMPLETED;
                 $rf->saveInstance($record, $repeat_instance, $update);
                 $this->emDebug("Survey Complete Save Return message: " . $rf->last_error_message);
             }
@@ -141,7 +141,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
                     if ($close_sec < $now_sec) {
 
                         // Set the status that the participant tried to access the survey after close
-                        $instance['ema_status'] = EMA::ACCESS_AFTER_CLOSED;
+                        $instance['ema_status'] = EMA::STATUS_OPEN_AFTER_CLOSE;
                         $rf->saveInstance($record, $repeat_instance, $instance);
                         $this->emDebug("Closed survey for project $project_id, record $record, form $instrument, event $event_id, instance $repeat_instance");
 
@@ -574,7 +574,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
             $opt_out_value = $record_data[$record_id][$event_id]["$opt_out_field"];
 
             // Check the opt-out field and see if it is set.
-            $opt_out = ($opt_out_value == EMA::OPT_OUT_VALUE ? true : false);
+            $opt_out = ($opt_out_value == EMA::STATUS_OPTED_OUT ? true : false);
 
         } else {
 

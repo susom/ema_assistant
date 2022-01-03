@@ -85,7 +85,7 @@ foreach($windows as $window) {
         if (count($data) > 0) {
 
             // If the opt out flag is set, close out these instances
-            if ($opt_out_value == EMA::OPT_OUT_VALUE)
+            if ($opt_out_value == EMA::STATUS_OPTED_OUT)
             {
                 $status = closeInstancesOptOut($rf, $record_id, $event_id, $form, $data, $window_name);
 
@@ -157,7 +157,7 @@ function getPhoneNumForText($phone_field, $phone_event_id)
  * text needs to be sent, or a reminder text needs sending.
  *
  * If the window close timestamp has passed, we don't send out anything. Instead we set the status of the instance  If
- * a text never went out, we set the status to NOTIFICATION MISSED and if the notification was sent out, we set the status
+ * a text never went out, we set the status to STATUS_INSTANCE_SKIPPED and if the notification was sent out, we set the status
  * WINDOW CLOSED.
  *
  * @param $rf
@@ -189,16 +189,16 @@ function determineAction($rf, $client, $record_id, $event_id, $data, $schedule, 
         $close_yn = windowCheck($instance_info['ema_open_ts'], $close_offset);
         if ($close_yn) {
 
-            // Close dates are based when time has passed. If notification was never sent, set the NOTIFICATION MISSED status
-            if ($instance_info['ema_status'] == EMA::SCHEDULE_CALCULATED) {
-                $close_instances[$instance_id]['ema_status'] = EMA::NOTIFICATION_MISSED;
+            // Close dates are based when time has passed. If notification was never sent, set the STATUS_INSTANCE_SKIPPED status
+            if ($instance_info['ema_status'] == EMA::STATUS_SCHEDULED) {
+                $close_instances[$instance_id]['ema_status'] = EMA::STATUS_INSTANCE_SKIPPED;
             } else {
-                $close_instances[$instance_id]['ema_status'] = EMA::WINDOW_CLOSED;
+                $close_instances[$instance_id]['ema_status'] = EMA::STATUS_WINDOW_CLOSED;
             }
         } else {
 
             // Now check to see if it is time to send the text
-            if ($instance_info['ema_status'] == EMA::SCHEDULE_CALCULATED) {
+            if ($instance_info['ema_status'] == EMA::STATUS_SCHEDULED) {
                 $send_yn =  windowCheck($instance_info['ema_open_ts'], 0);
                 if ($send_yn) {
 
@@ -208,20 +208,20 @@ function determineAction($rf, $client, $record_id, $event_id, $data, $schedule, 
                     $survey_link = REDCap::getSurveyLink($record_id, $form, $event_id, $instance_id);
                     $status = sendText($client, $from_number, $destination_number, $text . ' ' . $survey_link);
                     if ($status) {
-                        $send_text[$instance_id]['ema_status'] = EMA::NOTIFICATION_SENT;
+                        $send_text[$instance_id]['ema_status'] = EMA::STATUS_OPEN_SMS_SENT;
                     } else {
-                        $send_text[$instance_id]['ema_status'] = EMA::ERROR_WHEN_SENDING;
+                        $send_text[$instance_id]['ema_status'] = EMA::STATUS_SEND_ERROR;
                     }
                 }
-            } else if ((($instance_info['ema_status'] == EMA::NOTIFICATION_SENT) or
-                            ($instance_info['ema_status'] == EMA::REMINDER_1_SENT)) and
-                            ($instance_info['ema_status'] <> EMA::SURVEY_COMPLETED)) {
+            } else if ((($instance_info['ema_status'] == EMA::STATUS_OPEN_SMS_SENT) or
+                            ($instance_info['ema_status'] == EMA::STATUS_REMINIDER_1_SENT)) and
+                            ($instance_info['ema_status'] <> EMA::STATUS_COMPLETED)) {
 
                 foreach($reminders as $reminder => $offset) {
 
                     // Original notification has already been sent. Check to see if a reminder needs to be sent
                     $send_yn = windowCheck($instance_info['ema_open_ts'], $offset);
-                    if ($send_yn and $instance_info['ema_status'] == EMA::NOTIFICATION_SENT) {
+                    if ($send_yn and $instance_info['ema_status'] == EMA::STATUS_OPEN_SMS_SENT) {
 
                         // To send the text one by one, send here and if successful, add the notification to the array
                         // Also need to save the survey link
@@ -229,12 +229,12 @@ function determineAction($rf, $client, $record_id, $event_id, $data, $schedule, 
                         $survey_link = REDCap::getSurveyLink($record_id, $form, $event_id, $instance_id);
                         $status = sendText($client, $from_number, $destination_number, $text_r1 . ' ' . $survey_link);
                         if ($status) {
-                            $send_text[$instance_id]['ema_status'] = EMA::REMINDER_1_SENT;
+                            $send_text[$instance_id]['ema_status'] = EMA::STATUS_REMINIDER_1_SENT;
                         } else {
-                            $send_text[$instance_id]['ema_status'] = EMA::ERROR_WHEN_SENDING;
+                            $send_text[$instance_id]['ema_status'] = EMA::STATUS_SEND_ERROR;
                         }
 
-                    } else if ($send_yn and ($instance_info['ema_status'] == EMA::REMINDER_1_SENT) and (count($reminders) == 2)) {
+                    } else if ($send_yn and ($instance_info['ema_status'] == EMA::STATUS_REMINIDER_1_SENT) and (count($reminders) == 2)) {
 
                         // To send the text one by one, send here and if successful, add the notification to the array
                         // Also need to save the survey link
@@ -244,7 +244,7 @@ function determineAction($rf, $client, $record_id, $event_id, $data, $schedule, 
                         if ($status) {
                             $send_text[$instance_id]['ema_status'] = EMA::REMINDER_2_SENT;
                         } else {
-                            $send_text[$instance_id]['ema_status'] = EMA::ERROR_WHEN_SENDING;
+                            $send_text[$instance_id]['ema_status'] = EMA::STATUS_SEND_ERROR;
                         }
 
                     }
@@ -318,7 +318,7 @@ function closeInstancesOptOut($rf, $record_id, $event_id, $form, $data, $window_
     // Set the status of each instance to Window Closed
     $save_data = array();
     foreach($data as $instance_id => $instance_data) {
-        $save_data[$instance_id]['ema_status'] = EMA::WINDOW_CLOSED;
+        $save_data[$instance_id]['ema_status'] = EMA::STATUS_WINDOW_CLOSED;
     }
 
     // Save all the instances of this form/event to set the status as window closed
@@ -373,7 +373,7 @@ function getRepeatingData($rf, $record_id, $is_longitudinal, $event_name, $event
     global $module;
 
     // We want to filter on window name and only retrieve non-closed instances.  For some reason, the filter is not working
-    // This should actually be window_name = ema_window_name and ema_status not equal NOTIFICATION MISSED or WINDOW CLOSED
+    // This should actually be window_name = ema_window_name and ema_status not equal STATUS_INSTANCE_SKIPPED or WINDOW CLOSED
     //$filter = "([" . $event_name . "][ema_window_name] = '" . $window['window-name'] . "') and ([" . $event_name . "][ema_status] <> '" . EMA::WINDOW_CLOSED . "')";
     if ($is_longitudinal) {
         $filter = "[" . $event_name . "][ema_window_name] = '" . $window_name . "'";
@@ -404,8 +404,8 @@ function getRepeatingData($rf, $record_id, $is_longitudinal, $event_name, $event
     // this section can be deleted
     $filter_instances = array();
     foreach ($all_instances as $instance_id => $instance_info) {
-        if (($instance_info['ema_status'] != EMA::WINDOW_CLOSED) and ($instance_info['ema_status'] != EMA::NOTIFICATION_MISSED)
-                and ($instance_info['ema_status'] != EMA::ACCESS_AFTER_CLOSED) and ($instance_info['ema_status'] != EMA::SURVEY_COMPLETED)) {
+        if (($instance_info['ema_status'] != EMA::STATUS_WINDOW_CLOSED) and ($instance_info['ema_status'] != EMA::STATUS_INSTANCE_SKIPPED)
+                and ($instance_info['ema_status'] != EMA::STATUS_OPEN_AFTER_CLOSE) and ($instance_info['ema_status'] != EMA::STATUS_COMPLETED)) {
             $filter_instances[$instance_id] = $instance_info;
         }
     }

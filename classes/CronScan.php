@@ -115,14 +115,14 @@ class CronScan
                 if ($age_in_min >= $schedule['schedule-close-offset']) {
                     // This invitation has expired.  Depending on the status we can set the expiration type
                     switch($ema_status) {
-                        case EMA::SCHEDULE_CALCULATED:
-                            $new_status = EMA::NOTIFICATION_MISSED;
+                        case EMA::STATUS_SCHEDULED:
+                            $new_status = EMA::STATUS_INSTANCE_SKIPPED;
                             break;
-                        case EMA::NOTIFICATION_SENT:
-                        case EMA::REMINDER_1_SENT:
-                        case EMA::REMINDER_2_SENT:
-                        case EMA::ERROR_WHEN_SENDING:
-                            $new_status = EMA::WINDOW_CLOSED;
+                        case EMA::STATUS_OPEN_SMS_SENT:
+                        case EMA::STATUS_REMINIDER_1_SENT:
+                        case EMA::STATUS_REMINIDER_2_SENT:
+                        case EMA::STATUS_SEND_ERROR:
+                            $new_status = EMA::STATUS_WINDOW_CLOSED;
                             break;
                         default:
                             $this->module->emError("Unexpected EMA expired status of $ema_status found", $i, $instance_data);
@@ -130,30 +130,30 @@ class CronScan
                 } else {
                     // Invitation is still valid.  Check for further actions:
                     if ($opt_out) {
-                        $new_status = EMA::NOTIFICATION_MISSED;
+                        $new_status = EMA::STATUS_OPTED_OUT;
                         $this->module->emDebug("$record_id-$instance_id Opted Out - setting status $new_status");
                     } else {
                         switch ($ema_status) {
-                            case EMA::SCHEDULE_CALCULATED:
+                            case EMA::STATUS_SCHEDULED:
                                 // Send invite
                                 $outbound_sms = $window_text_message;
-                                $new_status = EMA::NOTIFICATION_SENT;
+                                $new_status = EMA::STATUS_OPEN_SMS_SENT;
                                 break;
-                            case EMA::NOTIFICATION_SENT:
+                            case EMA::STATUS_OPEN_SMS_SENT:
                                 // Check if ready for reminder 1
                                 if (!empty($reminders[0]) && $age_in_min >= $reminders[0]) {
                                     $outbound_sms = $window_reminder_1;
-                                    $new_status = EMA::REMINDER_1_SENT;
+                                    $new_status = EMA::STATUS_REMINIDER_1_SENT;
                                 }
                                 break;
-                            case EMA::REMINDER_1_SENT:
+                            case EMA::STATUS_REMINIDER_1_SENT:
                                 // Check if ready for reminder 2
                                 if (!empty($reminders[1]) && $age_in_min >= $reminders[1]) {
                                     $outbound_sms = $window_reminder_2;
-                                    $new_status = EMA::REMINDER_2_SENT;
+                                    $new_status = EMA::STATUS_REMINIDER_2_SENT;
                                 }
                                 break;
-                            case EMA::REMINDER_2_SENT:
+                            case EMA::STATUS_REMINIDER_2_SENT:
                                 // Do Nothing...
                                 break;
                             default:
@@ -172,14 +172,14 @@ class CronScan
                     // Get the To Number
                     $to_number = $this->getDataValue($record_id, $cell_phone_event_id, $cell_phone_field);
                     if (empty($to_number)) {
-                        $new_status = EMA::ERROR_WHEN_SENDING;
+                        $new_status = EMA::STATUS_SEND_ERROR;
                         $instance_data = $this->appendEmaLog($instance_data, "Missing cell phone number in $cell_phone_field");
                     } else {
                         $ts_start = microtime(true);
                         $result = $this->module->sendTwilioMessage($to_number, $outbound_sms);
                         $ts_duration = microtime(true) - $ts_start;
                         if ($result === false) {
-                            $new_status = EMA::ERROR_WHEN_SENDING;
+                            $new_status = EMA::STATUS_SEND_ERROR;
                             $instance_data = $this->appendEmaLog($instance_data, "Error sending sms message");
                             $this->module->emDebug("$record_id-$instance_id SMS failure in $ts_duration sec: $outbound_sms");
                         }
