@@ -62,7 +62,7 @@ class CronScan
             $window_reminder_2   = $window['text-reminder2-message'];
 
 
-            $instances = $this->getActiveInstances($window_form_event_id);
+            $instances = $this->getActiveInstances($window_name, $window_form_event_id);
             $this->module->emDebug("Found " . count($instances) . " EMA instances for window $window_name");
             if (empty($instances)) continue;
 
@@ -262,33 +262,40 @@ class CronScan
 
 
     /**
-     * Obtain all records / instances of EMA for specified event that should be further processed
+     * Obtain all records / instances of EMA for specified window / event that should be further processed
+     * @param $window_name
      * @param $event_id
      * @return array
      */
-    private function getActiveInstances($event_id) {
+    private function getActiveInstances($window_name, $event_id) {
         // Query the database to obtain all instances that require processing
         $q = $this->module->query(
             "select
-                r1.record as record_id,
-                r1.event_id,
-                ifnull(r1.instance, 1) as instance,
+                r1.record,
+                ifnull(r1.instance,1) as instance,
                 r1.value as ema_open_ts,
-                TIMESTAMPDIFF(MINUTE, str_to_date(r1.value, '%Y-%m-%d %H:%i:%s'), current_timestamp) as age_in_min,
-                r2.value as ema_status
+                r2.value as ema_status,
+                TIMESTAMPDIFF(MINUTE, str_to_date(r1.value, '%Y-%m-%d %H:%i:%s'), current_timestamp) as age_in_min
             from
                 redcap_data r1
                 join redcap_data r2 on r1.project_id = r2.project_id and r1.record = r2.record
-                                   and r1.event_id = r2.event_id and r1.instance <=> r2.instance
+                    and r1.event_id = r2.event_id and r1.instance <=> r2.instance
+                join redcap_data r3 on r1.project_id = r3.project_id and r1.record = r3.record
+                    and r1.event_id = r3.event_id and r1.instance <=> r3.instance
+                    and r3.value = ?
             where
                 r1.project_id = ?
-            and r1.event_id = ?
+            and r2.event_id = ?
             and r1.field_name = 'ema_open_ts'
             and current_timestamp >= str_to_date(r1.value, '%Y-%m-%d %H:%i:%s')
+
             and r2.field_name = 'ema_status'
             and cast(r2.value as unsigned) < 90
-            order by 1,2", [ $this->module->getProjectId(), $event_id ]
+
+            and r3.field_name = 'ema_window_name'
+            order by 1,2", [ $window_name, $this->module->getProjectId(), $event_id ]
         );
+
         $results = [];
         while ($row = db_fetch_assoc($q)) $results[] = $row;
         return $results;

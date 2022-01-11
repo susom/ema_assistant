@@ -43,44 +43,10 @@ if(isset($_POST['action'])) {
 
 require_once APP_PATH_DOCROOT . 'ProjectGeneral/header.php';
 
-
-
-
-// $record_id = 2;
-// $instance_id = 2;
-// $event_id = 115;    //  115 = form, 116 = event
-// $d = \REDCap::getData([
-//     'records' => $record_id,
-//     'events' => $event_id
-// ]);
-// // echo "<pre>DATA: " . print_r($d,true) . "</pre>";
-// $RF = new RepeatingForms('ema_instance_detail', $event_id);
-// // $instance = $RF->loadData($record_id);
-// $instance = $RF->loadData($record_id, null, $d);
-//
-// $data = $RF->getInstanceById($record_id, $instance_id);
-// echo "<pre>Record $record_id - instance $instance_id - event $event_id\n" . (int) $data . "\n"
-//     . print_r($data,true) . "\n" . $RF->last_error_message . "</pre>";
-//
-// $data['ema_log'] = "Touched " . date("Y-m-d H:i:s") . "\n" . $data['ema_log'];
-// $result = $RF->saveInstance($record_id, $instance_id, $data);
-//
-// echo "<pre>" . print_r($result,true) . "</pre>";
-// echo "<pre>" . print_r($RF->last_error_message,true) . "</pre>";
-
-
 // Lets try CronScan!
-
-
-
-// $module->sendTwilioMessage("+16503803405", "Test");
-
-$cs = new CronScan($module);
-$cs->scanWindows();
-echo "<pre>CronScan Complete" . print_r($cs,true) . "</pre>";
-
-
-
+// $cs = new CronScan($module);
+// $cs->scanWindows();
+// echo "<pre>CronScan Complete" . print_r($cs,true) . "</pre>";
 
 ?>
 <style>

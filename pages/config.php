@@ -1,6 +1,5 @@
 <?php
 namespace Stanford\EMA;
-
 /** @var EMA $module */
 
 /**
@@ -12,7 +11,7 @@ namespace Stanford\EMA;
  */
 
 if (!empty($_POST['action'])) {
-	$action = $_POST['action'];
+	$action = filter_var($_POST['action'], FILTER_SANITIZE_STRING);
 
 	switch ($action) {
 		case "save":
@@ -39,7 +38,7 @@ if (!empty($_POST['action'])) {
 			exit();
 			break;
 		default:
-			$module->debug($_POST,"DEBUG","Unsupported Action");
+			$module->emDebug($_POST,"DEBUG","Unsupported Action");
 			print "Unknown action";
 	}
 }
