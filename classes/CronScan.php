@@ -108,8 +108,9 @@ class CronScan
                 $ema_status = $instance_data['ema_status'];
                 $this->module->emDebug("$record_id-$instance_id Loaded instance with status $ema_status in $ts_duration sec");
 
-                // Make an array of reminders
-                $reminders = $schedule['schedule-reminders'];
+                // Clear loop
+                $new_status = null;
+                $outbound_sms = null;
 
                 // Check if expired
                 if ($age_in_min >= $schedule['schedule-close-offset']) {
@@ -141,14 +142,14 @@ class CronScan
                                 break;
                             case EMA::STATUS_OPEN_SMS_SENT:
                                 // Check if ready for reminder 1
-                                if (!empty($reminders[0]) && $age_in_min >= $reminders[0]) {
+                                if (!empty($schedule['schedule-reminders'][0]) && $age_in_min >= $schedule['schedule-reminders'][0]) {
                                     $outbound_sms = $window_reminder_1;
                                     $new_status = EMA::STATUS_REMINIDER_1_SENT;
                                 }
                                 break;
                             case EMA::STATUS_REMINIDER_1_SENT:
                                 // Check if ready for reminder 2
-                                if (!empty($reminders[1]) && $age_in_min >= $reminders[1]) {
+                                if (!empty($schedule['schedule-reminders'][1]) && $age_in_min >= $schedule['schedule-reminders'][1]) {
                                     $outbound_sms = $window_reminder_2;
                                     $new_status = EMA::STATUS_REMINIDER_2_SENT;
                                 }
