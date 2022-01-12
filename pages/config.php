@@ -1,6 +1,5 @@
 <?php
 namespace Stanford\EMA;
-
 /** @var EMA $module */
 
 /**
@@ -12,7 +11,7 @@ namespace Stanford\EMA;
  */
 
 if (!empty($_POST['action'])) {
-	$action = $_POST['action'];
+	$action = filter_var($_POST['action'], FILTER_SANITIZE_STRING);
 
 	switch ($action) {
 		case "save":
@@ -39,7 +38,7 @@ if (!empty($_POST['action'])) {
 			exit();
 			break;
 		default:
-			$module->debug($_POST,"DEBUG","Unsupported Action");
+			$module->emDebug($_POST,"DEBUG","Unsupported Action");
 			print "Unknown action";
 	}
 }
@@ -55,17 +54,23 @@ require_once APP_PATH_DOCROOT . 'ProjectGeneral/header.php';
         <div class="panel-heading pb-2">
             <strong><?php echo $module->getModuleName() ?> Configuration</strong>
         </div>
-        <?php
-            $use_config_file = $module->getProjectSetting('use-config-file');
-            if (!$use_config_file) {
-                ?>
-                <div class="alert alert-danger text-center">
-                    This configuration is not currently being used.  To use this configuration you must uncheck the `use-config-file`
-                    option in the External Module setup.
-                </div>
-                <?php
-            }
+<?php
+    $use_config_file = $module->getProjectSetting('use-config-file');
+    if (!$use_config_file) {
+        list($windows, $schedules) = $module->getConfigAsArrays();
+        $config = ['windows'=> $windows, 'schedules' => $schedules];
         ?>
+        <div class="alert alert-danger text-center">
+            The module configuration is currently being controlled from the External Module settings page.
+            If you wish to use the editor window below instead, you must
+            check the `use-config-file` option in the External Module setup and then return to this page.
+        </div>
+        <div>
+            <pre class='text-left' style='max-height: 250px; overflow:scroll;'><?php echo json_encode($config, JSON_PRETTY_PRINT) ?></pre>
+        </div>
+<?php
+    } else {
+?>
         <div class="panel-body config-editor">
             <div id='config_editor' data-editor="ace" data-mode="json" data-theme="clouds"></div>
         </div>
@@ -83,15 +88,14 @@ require_once APP_PATH_DOCROOT . 'ProjectGeneral/header.php';
 	<style>
 		.config-editor { border-bottom: 1px solid #ddd; padding:0;}
 	</style>
-<?php
-require_once APP_PATH_DOCROOT . 'ProjectGeneral/footer.php';
-?>
-	<script src="<?php echo $module->getUrl('js/ace/ace.js'); ?>"></script>
+    <script src="<?php echo $module->getUrl('js/ace/ace.js'); ?>"></script>
     <script src="<?php echo $module->getUrl('js/config.js'); ?>"></script>
     <script>
         // Set the value of the editor
         EM.startVal = <?php print json_encode( $module->getConfigAsString() ) ?>;
         EM.editor.instance.setValue(EM.startVal,1);
     </script>
-
 <?php
+    }
+
+require_once APP_PATH_DOCROOT . 'ProjectGeneral/footer.php';

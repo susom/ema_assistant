@@ -225,12 +225,6 @@
                     "name": "<b>Event Close Offset</b><br>Enter the number of minutes from initial invitation when the EMA window will end (e.g. 20).  New survey entries after this time will not be allowed",
                     "required": false,
                     "type": "text"
-                },
-                {
-                    "key": "schedule-length",
-                    "name": "<b>Schedule length</b><br>Enter the length of the window",
-                    "required": false,
-                    "type": "text"
                 }
             ]
         },

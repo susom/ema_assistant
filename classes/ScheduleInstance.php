@@ -4,12 +4,12 @@ namespace Stanford\EMA;
 use REDCap;
 use Exception;
 
-require_once "classes/RepeatingForms.php";
+// require_once "classes/RepeatingForms.php";
 
 /**
  * ScheduleInstance
  *
- * @property \Stanford\EMA\EMA $module
+ * @property EMA $module
  */
 class ScheduleInstance
 {
@@ -61,9 +61,9 @@ class ScheduleInstance
         $this->pid                      = $this->module->getProjectId();
 
         // These are the text messages that will be sent
-        $this->text_msgs[EMA::NOTIFICATION_SENT] = $window_config['text-message'];
-        $this->text_msgs[EMA::REMINDER_1_SENT] = $window_config['text-reminder1-message'];
-        $this->text_msgs[EMA::REMINDER_2_SENT] = $window_config['text-reminder2-message'];
+        $this->text_msgs[EMA::STATUS_OPEN_SMS_SENT] = $window_config['text-message'];
+        $this->text_msgs[EMA::STATUS_REMINIDER_1_SENT] = $window_config['text-reminder1-message'];
+        $this->text_msgs[EMA::STATUS_REMINIDER_2_SENT] = $window_config['text-reminder2-message'];
 
         // This is the schedule configuration to determine days/times of surveys
         $this->sched_offsets            = $schedule_config['schedule-offsets'];
@@ -96,8 +96,8 @@ class ScheduleInstance
 
         // Instantiate the repeating form helper class
         try {
-            $rf = new RepeatingForms($this->pid, $this->form);
-            $next_instance_id = $rf->getNextInstanceId($this->record_id, $this->form_event_id);
+            $rf = new RepeatingForms($this->form, $this->form_event_id);
+            $next_instance_id = $rf->getNextInstanceId($this->record_id);
         } catch (Exception $ex) {
             $this->module->emError("Exception when instantiating RepeatingForms class");
             return;
@@ -119,11 +119,11 @@ class ScheduleInstance
             $saveSched['ema_offset']        = $offset;
             $saveSched['ema_open']          = $this->start_time + $rand_time + $offset;
             $saveSched['ema_open_ts']       = $this->addMinutesToDate($start_date, $saveSched['ema_open']);
-            $saveSched['ema_status']        = EMA::SCHEDULE_CALCULATED;
+            $saveSched['ema_status']        = EMA::STATUS_SCHEDULED;
 
             // Save this info on the instrument specified
             $instance_id = $next_instance_id++;
-            $status = $rf->saveInstance($this->record_id, $saveSched, $instance_id, $this->form_event_id);
+            $status = $rf->saveInstance($this->record_id, $instance_id,  $saveSched);
             if (!$status) {
                 $message = $rf->last_error_message();
                 $this->emError("Error when saving data for window $this->window_name, record $this->record_id with message: " . $message);

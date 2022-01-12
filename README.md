@@ -1,47 +1,56 @@
 # Ecological Momentary Assessment Assistant
-A REDCap External Module designed to create and manage surveys using the Ecological Momentary Assessment (EMA) method
+A REDCap External Module designed to create and manage surveys using the Ecological Momentary Assessment (EMA) method.
 
-A variety of configuration options specify the number and timing of participant notifications for assessment via SMS.   The EM configuration file can be used to create these files or there is a web-based configuration builder
-that can be used.
+In an example project, a participant might receive 4 assessments per day for 7 days.  The timing of
+each assessment can be randomized within blocks throughout the day to try and get random but
+well distributed measurements.  The duration of each measurement can be defined.
 
-Each project can have one or more configurations to support complex, multi-family member projects.
+A variety of configuration options specify the number and timing of participant notifications for assessment via SMS.
+The EM configuration file can be used to create these files or there is a web-based configuration builder that can be used.
 
 ## How It Works:
 
-Each participant may have many events (called windows) in a study.  For example, baseline, 3 month, and 12 month.  For each event/window, a multi-day configuration can be activated.
-The scheduling of each window is 'triggered' by an event that is defined by REDCap logic, such as a date field being completed or a box being checked, etc...
+Each participant may have multiple experiments for data collection (called windows) in a study.
+For example: baseline, 1 month, and 3 month.  For each data collection window can be a multi-day
+configuration with multiple surveys per day.
 
-Configuration of an EMA event uses two objects: a `window` which controls if and on what days and a `schedule` which controls the timing of events in a given day.
+The scheduling of each window is 'triggered' by a logical expression and must have a baseline date field.
+
+Looking at the two configuration objects helps understand how the module works:
+Configuration of an EMA event uses two objects: a `window` which controls if and on what days and a `schedule` which
+controls the timing of events in a given day.
 
 An EMA window has the following parameters:
-- **window-name** (e.g. baseline, month 1, etc...)
-- **window-trigger-logic** (when true, window will be created)
-- **window-start-field** (the field that holds the date the window begins yyyy-mm-dd) - this is day 0, not day 1.
-- **window-start-event** event where the start field resides
-- **window-opt-out-field** (if equal to 1/true, scheduled alerts will be cancelled and not sent)
-- **window-opt-out-event** event where the opt out field resides
-- **window-days** (e.g. number of days for window to run) - this is an array of day offsets, e.g. [1,2,3,4,5,6,7] to permit skipping days in more complex scenarios
-- **window-form** repeating form or form in repeating event where the schedule is stored
-- **window-form-event** event where the form resides
-- **window-schedule-name** name of the schedule configuration that corresponds to this window (see below)
-- **schedule-offset-default** default value of number of minutes past midnight this schedule starts (e.g. 480 for 8AM)
-- **schedule-offset-override-field** -- name of field that contains a custom start time for the window's schedule, e.g. [wake_time]
-- **schedule-offset-override-event** -- event where the offset override field resides
-- **text-message** -- wording of message to be sent to participant
-- **text-reminder1-message** -- wording of message to be sent as reminder 1 (optional)
-- **text-reminder2-message** -- wording of message to be sent as reminder 2 (optional)
-- **cell-phone-field** - field in project which holds the cell phone number
-- **cell-phone-event** - event where the cell phone field resides
+- `window-name` e.g. baseline, month 1, etc...
+- `window-trigger-logic` when true, all instances of scheduled assessments in the window will be created
+- `window-start-field` the field that holds the date the window begins yyyy-mm-dd, this is day 0, not day 1
+- `window-start-event` event where the start field resides
+- `window-opt-out-field` if equal to 1 scheduled alerts will be cancelled and not sent - calc field recommended
+- `window-opt-out-event` event where the opt out field resides
+- `window-days` e.g. number of days for window to run - this is an array of day offsets, e.g. [1,2,3,4,5,6,7] to permit skipping days in more complex scenarios
+- `window-form` repeating form or form in repeating event where the ema details and survey are stored - it must use the fields from the template form
+- `window-form-event` event where the form resides
+- `window-schedule-name` name of the schedule configuration that corresponds to this window (see below)
+- `schedule-offset-default` default value of number of minutes past midnight this schedule starts (e.g. 480 for 8AM)
+- `schedule-offset-override-field` -- name of field that contains a custom start time for the window's schedule, e.g. [wake_time]
+- `schedule-offset-override-event` -- event where the offset override field resides
+- `text-message` -- wording of message to be sent to participant
+- `text-reminder1-message` -- wording of message to be sent as reminder 1 (optional)
+- `text-reminder2-message` -- wording of message to be sent as reminder 2 (optional)
+- `cell-phone-field` - field in project which holds the cell phone number
+- `cell-phone-event` - event where the cell phone field resides
 
-An EMA Schedule configuration controls the specific events within a given day of an active Window.  It is referenced from the Window by the **window-schedule-name** parameter.  There may be more than one window configuration that links to the same schedule.  Each schedule has the following parameters:
-- **schedule-name** -- used to link schedule with window
-- **schedule-offsets** - comma separated list of minutes past midnight when texts are sent
-- **schedule-randomize-window** - if entered, a random number of minutes between 0 and this value will be added to the offset time when the schedule is generated
-- **schedule-reminders** - comma separated list of the number of minutes after each text is sent that a reminder will be sent.  Only 2 reminders are currently possible.
-- **schedule-close-offset** - number of minutes after the scheduled send time to close the window.  Responses cannot be started after this time has passed for a given assessment.
+An EMA Schedule configuration controls the specific events within a given day of an active Window.  It is referenced from the Window by the `window-schedule-name` parameter.  There may be more than one window configuration that links to the same schedule.  Each schedule has the following parameters:
+- `schedule-name` -- used to link schedule with window
+- `schedule-offsets` - comma separated list of minutes past midnight when texts are sent
+- `schedule-randomize-window` - if entered, a random number of minutes between 0 and this value will be added to the offset time when the schedule is generated
+- `schedule-reminders` - comma separated list of the number of minutes after each text is sent that a reminder will be sent.  Only 2 reminders are currently possible.
+- `schedule-close-offset` - number of minutes after the scheduled send time to close the window.  Responses cannot be started after this time has passed for a given assessment.
 
 ### Scenario Example: Customizing the first EMA of the day
-You can use the `schedule-offset-default` to have the first assessment default to 8am for participants by setting the value to 480 and having the `schedule-offsets` array begin with a `0`.  However, if we have one participant that wakes at 9am and should begin their first EMA two hours later at 11am, we can override the default value by specifying a value in the REDCap field specified for `schedule-offset-override-field` and `schedule-offset-override-event`.  The value here would be 11:00am.
+Most times in the module are in minutes from midnight.  So 8AM = 8 hours x 60 minutes = 480.
+So, if you set the `schedule-offset-default` to have the first assessment default to 8am for participants by setting the
+value to 480 and having the `schedule-offsets` array begin with a `0`.  However, if we have one participant that wakes at 9am and should begin their first EMA two hours later at 11am, we can override the default value by specifying a value in the REDCap field specified for `schedule-offset-override-field` and `schedule-offset-override-event`.  The value here would be 11:00am.
 
 On each save for a record, we check if any windows need to be created.  This is done by verifying the required fields are present for the window, such as start time, a text number to send to, and that the
 `window-trigger-logic` evaluates to true.  If all is valid, then the schedule will be created for this window configuration in the current record.  Currently, window creation on bulk import is not supported - a save is required.
@@ -50,13 +59,13 @@ The sending time for each EMA survey instance will be determined when the window
 if the window has 7 days and there are 4 surveys to be sent per day, then 28 instances of the repeating survey form will be created.
 
 In the repeating form or event that contains the survey, the following data fields must be present for each instance:
-- **ema_window_name** - name of window configuration
-- **ema_window_day** - This is day number of the window configuration from the `window-days` definition.  If there are 7 days of surveys, this value will be the offset day from the start
-- **ema_sequence** - This is the survey number for the day that it is being sent and refers to the `schedule-offsets` parameter in the window schedule.  If there are 4 surveys sent per day, this number will be 1-4 respectively.
-- **ema_offset**  - This is the number of minutes from the first survey of the day that this survey will be scheduled.  This field isn't used for any logic but is copied in case needed for data analysis.
-- **ema_open** - This is the number of minutes past midnight that the survey is scheduled (i.e. if sequence 1 starts at 0 and the sequence-offset = 480 and random = 67 then this would have a value of 0 + 480 + 67 = 547 minutes)
-- **ema_open_ts** - This is a human readable timestamp value of when the survey is schedule in format "yyyy-mm-dd H:i:s"
-- **ema_status** - Dropdown of status values:
+- `ema_window_name` - name of window configuration
+- `ema_window_day` - This is day number of the window configuration from the `window-days` definition.  If there are 7 days of surveys, this value will be the offset day from the start
+- `ema_sequence` - This is the survey number for the day that it is being sent and refers to the `schedule-offsets` parameter in the window schedule.  If there are 4 surveys sent per day, this number will be 1-4 respectively.
+- `ema_offset`  - This is the number of minutes from the first survey of the day that this survey will be scheduled.  This field isn't used for any logic but is copied in case needed for data analysis.
+- `ema_open` - This is the number of minutes past midnight that the survey is scheduled (i.e. if sequence 1 starts at 0 and the sequence-offset = 480 and random = 67 then this would have a value of 0 + 480 + 67 = 547 minutes)
+- `ema_open_ts` - This is a human readable timestamp value of when the survey is schedule in format "yyyy-mm-dd H:i:s"
+- `ema_status` - Dropdown of status values:
     <ul>
     <li>1, Schedule Calculated</li>
     <li>2, Notification Sent</li>

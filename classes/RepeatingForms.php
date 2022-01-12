@@ -4,7 +4,7 @@ namespace Stanford\EMA;
 use \REDCap;
 use \Project;
 use \Records;
-
+use \Exception;
 /*
  * For longitudinal projects, the returned data is in the form of:
     [record_id 1]
@@ -51,62 +51,87 @@ will vary.
  */
 class RepeatingForms
 {
-    // Metadata
+    // Form Data
     private $Proj;
     private $pid;
     private $is_longitudinal;
-    private $data_dictionary;
-    private $fields;
-    private $events_enabled = array();    // Array of event_ids where the instrument is enabled
     private $instrument;
-
-    // Instance
+    private $fields;                    // Array of fields contained in the instrument
     private $event_id;
-    private $data;
+    private $repeat_context;            // REPEAT_FORM || REPEAT_EVENT
+
+    // Instance Data
+    private $data;                      // Array of instance_ids and data
     private $data_loaded = false;
+    private $events_loaded = [];        // Array of specific events loaded
+    private $filter_loaded;
     private $record_id;
 
     // Last error message
     public $last_error_message = null;
 
-    function __construct($pid, $instrument_name)
+    const REPEAT_FORM  = 1;
+    const REPEAT_EVENT = 2;
+
+    /**
+     * This class is instantiated with a scope of a project and a form
+     * TODO: Should this only be instantiated with an event id if longitudinal?  I think so!
+     * TODO: Also, is it really possible for PID to be from another project outside project scope?  This needs to be
+     *       tested -- if not then we should just remove it and require that you be in project scope to use this class.
+     * @param string $instrument
+     * @param int $event_id
+     * @param int $project_id
+     * @throws Exception
+     */
+    function __construct($instrument, $event_id = null, $project_id = null)
     {
-        global $Proj, $module;
+        global $Proj;
 
-        if ($Proj->project_id == $pid) {
-            $this->Proj = $Proj;
+        // Validate the Project
+        if (is_null($project_id)) {
+            if (!empty($Proj)) $this->Proj = $Proj;
         } else {
-            $this->Proj = new Project($pid);
+            $this->Proj = ( empty($Proj) ||  $Proj->project_id != $project_id) ? new Project($project_id) :  $Proj;
         }
-
-        if (empty($this->Proj) or ($this->Proj->project_id != $pid)) {
-            $this->last_error_message = "Cannot determine project ID in RepeatingForms";
+        if (empty($this->Proj)) {
+            throw new Exception("Cannot determine project ID in RepeatingForms");
         }
-        $this->pid = $pid;
-
-        // Find the fields on this repeating instrument
-        $this->instrument = $instrument_name;
-        $this->data_dictionary = REDCap::getDataDictionary($pid, 'array', false, null, array($instrument_name));
-        $this->fields = array_keys($this->data_dictionary);
-
-        // Is this project longitudinal?
+        $this->pid = $this->Proj->project_id;
         $this->is_longitudinal = $this->Proj->longitudinal;
 
-        // If this is not longitudinal, retrieve the event_id
-        if (!$this->is_longitudinal) {
-            $this->event_id = array_keys($this->Proj->eventInfo)[0];
-        }
+        // Retrieve valid repeating events for this form
+        $repeating_forms_events = $this->Proj->getRepeatingFormsEvents();
 
-        // Retrieved events
-        $all_events = $this->Proj->getRepeatingFormsEvents();
-
-        // See which events have this form enabled
-        foreach (array_keys($all_events) as $event) {
-            $fields_in_event = REDCap::getValidFieldsByEvents($this->pid, $event, false);
-            $field_intersect = array_intersect($fields_in_event, $this->fields);
-            if (isset($field_intersect) && sizeof($field_intersect) > 0) {
-                array_push($this->events_enabled, $event);
+        // Validate the EventId
+        if (is_null($event_id)) {
+            if ($this->is_longitudinal) {
+                throw new Exception("You must supply an event_id for longitudinal projects");
+            } else {
+                $event_id = $this->Proj->firstEventId;
             }
+        } else {
+            if (!isset($repeating_forms_events[$event_id])) {
+                throw new Exception("The supplied event_id $event_id is not repeating in this project");
+            }
+        }
+        $this->event_id = $event_id;
+
+        // Validate the Instrument
+        if (!in_array($instrument, $this->Proj->eventsForms[$event_id])) {
+            throw new Exception("Instrument $instrument is not enabled in event $event_id");
+        }
+        $this->instrument = $instrument;
+
+        // Get the valid fields
+        $this->fields = array_keys($this->Proj->forms[$instrument]['fields']);
+
+        // Set the repeating context
+        if (isset($repeating_forms_events[$event_id][$instrument])) {
+            $this->repeat_context = self::REPEAT_FORM;
+        } elseif ($repeating_forms_events[$event_id] === "WHOLE") {
+            $this->repeat_context = self::REPEAT_EVENT;
+        } else {
+            throw new Exception("Unable to assign repeat context to $instrument in event $event_id");
         }
     }
 
@@ -116,48 +141,57 @@ class RepeatingForms
      * is saved internally in $this->data.  The calling program must then call one of the get* functions
      * to retrieve the data.
      *
-     * @param $record_id
-     * @param null $event_id
-     * @param null $filter
+     * @param string        $record_id
+     * @param null|string   $filter
+     * @param null|array    $existing_record_data
      * @return None
      */
-    public function loadData($record_id, $event_id=null, $filter=null)
+    public function loadData($record_id, $filter=null, $existing_record_data=null)
     {
-        global $module;
-
         $this->record_id = $record_id;
-        if (!is_null($event_id)) {
-            $this->event_id = $event_id;
+
+        // Populate the data
+        if (empty($existing_record_data)) {
+            // We will query the required data
+            $params = [
+                "project_id"    => $this->pid,
+                "records"       => $record_id,
+                "fields"        => $this->fields,
+                "events"        => $this->event_id,
+                "filterLogic"   => $filter
+            ];
+            $record_data = REDCap::getData($params);
+        } else {
+            // Assume data was already queried and passed in
+            $record_data = $existing_record_data;
         }
 
-        // Filter logic will only return matching instances
-        $return_format = 'array';
-        $repeating_forms = REDCap::getData($this->pid, $return_format, array($record_id), $this->fields, $this->event_id, NULL, false, false, false, $filter, true);
-
-        // If this is a classical project, we are not adding event_id.
-        // When this is a repeating event, there is a blank for the form since all forms are repeated
-        foreach (array_keys($repeating_forms) as $record) {
-            foreach ($this->events_enabled as $event) {
-                if (!is_null($repeating_forms[$record]["repeat_instances"][$event]) and !empty($repeating_forms[$record_id]["repeat_instances"][$event])) {
-                    $repeat_data = $repeating_forms[$record]["repeat_instances"][$event];
-                    $repeat_type = array_keys($repeating_forms[$record]["repeat_instances"][$event])[0];
-                    if (empty($repeat_type)) {
-                        $form_data = $repeat_data[''];
-                    } else {
-                        $form_data = $repeat_data[$this->instrument];
-                    }
-
-                    if ($this->is_longitudinal) {
-                        $this->data[$record_id][$event] = $form_data;
-                    } else {
-                        $this->data[$record_id] = $form_data;
-                    }
-                }
+        // Filter out just the repeating event instance part of the data structure
+        if (!empty($record_data[$record_id]["repeat_instances"][$this->event_id]))
+        {
+            $rei_parent = $record_data[$record_id]["repeat_instances"][$this->event_id];
+            if ($this->repeat_context == self::REPEAT_EVENT) {
+                // Repeating Event so instrument name is missing
+                $rei_data = $rei_parent[''];
+            } else {
+                // Repeating Form in an Event
+                $rei_data = $rei_parent[$this->instrument];
             }
+
+            // Filter instance data to only use valid fields from the repeating form
+            foreach ($rei_data as $i => $data) {
+                $rei_data[$i] = array_intersect_key($data, array_flip($this->fields));
+            }
+
+            // Save data to object removing event_id for classical projects (is this necessary)
+            // Save data object -- take care that data has event id for classical projects which should
+            // be removed on save
+            $this->data[$record_id][$this->event_id] = $rei_data;
         }
 
         $this->data_loaded = true;
     }
+
 
     /**
      * This function will return the data retrieved based on a previous loadData call. All instances of an
@@ -165,106 +199,54 @@ class RepeatingForms
      * returned data format.
      *
      * @param $record_id
-     * @param null $event_id
      * @return array (of data loaded from loadData) or false if an error occurred
      */
-    public function getAllInstances($record_id, $event_id=null) {
+    public function getAllInstances($record_id) {
+        $this->verifyRecordDataLoaded($record_id);
 
-        if ($this->is_longitudinal && is_null($event_id)) {
-            $this->last_error_message = "You must supply an event_id for longitudinal projects in " . __FUNCTION__;
-            return false;
-        } else if (!$this->is_longitudinal) {
-            $event_id = $this->event_id;
-        }
-
-        // Check to see if we have the correct data loaded. If not, load it.
-        if ($this->data_loaded == false || $this->record_id != $record_id || $this->event_id != $event_id) {
-            $this->loadData($record_id, $event_id, null);
-        }
-
-        return $this->data;
+        return $this->data[$record_id][$this->event_id];
     }
+
 
     /**
      * This function will return one instance of data retrieved in dataLoad using the $instance_id.
      *
      * @param $record_id
      * @param $instance_id
-     * @param null $event_id
-     * @return array (of instance data) or false if an error occurs
+     * @return false | array (of instance data) or false if an error occurs
      */
-    public function getInstanceById($record_id, $instance_id, $event_id=null)
+    public function getInstanceById($record_id, $instance_id)
     {
-        if ($this->is_longitudinal && is_null($event_id)) {
-            $this->last_error_message = "You must supply an event_id for longitudinal projects in " . __FUNCTION__;
+        $this->verifyRecordDataLoaded($record_id);
+
+        if (!isset($this->data[$record_id][$this->event_id][$instance_id])) {
+            // There is no instance data
+            $this->last_error_message = "Instance number invalid";
             return false;
-        } else if (!$this->is_longitudinal) {
-            $event_id = $this->event_id;
-        }
-
-        // Check to see if we have the correct data loaded.
-        if ($this->data_loaded == false || $this->record_id != $record_id || $this->event_id != $event_id) {
-            $this->loadData($record_id, $event_id, null);
-        }
-
-        // If the record and optionally event match, return the data.
-        if ($this->is_longitudinal) {
-            if (!empty($this->data[$record_id][$event_id][$instance_id]) &&
-                !is_null($this->data[$record_id][$event_id][$instance_id])) {
-                return $this->data[$record_id][$event_id][$instance_id];
-            } else {
-                $this->last_error_message = "Instance number is invalid";
-                return false;
-            }
         } else {
-            if (!empty($this->data[$record_id][$instance_id]) && !is_null($this->data[$record_id][$instance_id])) {
-                return $this->data[$record_id][$instance_id];
-            } else {
-                $this->last_error_message = "Instance number is invalid";
-                return false;
-            }
+            return $this->data[$record_id][$this->event_id][$instance_id];
         }
     }
+
 
     /**
      * This function will return the first instance_id for this record and optionally event. This function
      * does not return data. If the instance data is desired, call getInstanceById using the returned instance id.
      *
      * @param $record_id
-     * @param null $event_id
      * @return int (instance number) or false (if an error occurs)
      */
-     public function getFirstInstanceId($record_id, $event_id=null) {
-        if ($this->is_longitudinal && is_null($event_id)) {
-            $this->last_error_message = "You must supply an event_id for longitudinal projects in " . __FUNCTION__;
-            return false;
-        } else if (!$this->is_longitudinal) {
-            $event_id = $this->event_id;
-        }
-
-        // Check to see if we have the correct data loaded.
-        if ($this->data_loaded == false || $this->record_id != $record_id || $this->event_id != $event_id) {
-            $this->loadData($record_id, $event_id, null);
-        }
-
-        // If the record and optionally event match, return the data.
-        if ($this->is_longitudinal) {
-            if (!empty(array_keys($this->data[$record_id][$event_id])[0]) &&
-                !is_null(array_keys($this->data[$record_id][$event_id])[0])) {
-                return array_keys($this->data[$record_id][$event_id])[0];
-            } else {
-                $this->last_error_message = "There are no instances in event $this->event_id for record $record_id " . __FUNCTION__;
-                return false;
-            }
-        } else {
-            if (!empty(array_keys($this->data[$record_id])[0]) && !is_null(array_keys($this->data[$record_id])[0])) {
-                return array_keys($this->data[$record_id])[0];
-            } else {
-                $this->last_error_message = "There are no instances for record $record_id " . __FUNCTION__;
-                return false;
-            }
-        }
+     public function getFirstInstanceId($record_id) {
+         $this->verifyRecordDataLoaded($record_id);
+         $data = $this->data[$record_id][$this->event_id];
+         if (empty($data)) {
+             // There is no instance data
+             return false;
+         } else {
+             return min(array_keys($data));
+         }
     }
+
 
     /**
      * This function will return the last instance_id for this record and optionally event. This function
@@ -274,37 +256,15 @@ class RepeatingForms
      * @param null $event_id
      * @return int | false (If an error occurs)
      */
-    public function getLastInstanceId($record_id, $event_id=null) {
+    public function getLastInstanceId($record_id) {
+        $this->verifyRecordDataLoaded($record_id);
 
-        if ($this->is_longitudinal && is_null($event_id)) {
-            $this->last_error_message = "You must supply an event_id for longitudinal projects in " . __FUNCTION__;
+        $data = $this->data[$record_id][$this->event_id];
+        if (empty($data)) {
+            // There is no instance data
             return false;
-        } else if (!$this->is_longitudinal) {
-            $event_id = $this->event_id;
-        }
-
-        // Check to see if we have the correct data loaded.
-        if ($this->data_loaded == false || $this->record_id != $record_id || $this->event_id != $event_id) {
-            $this->loadData($record_id, $event_id, null);
-        }
-
-        // If the record_ids (and optionally event_ids) match, return the data.
-        if ($this->is_longitudinal) {
-            $size = sizeof($this->data[$record_id][$event_id]);
-            if ($size < 1) {
-                $this->last_error_message = "There are no instances in event $event_id for record $record_id " . __FUNCTION__;
-                return false;
-            } else {
-                return array_keys($this->data[$record_id][$event_id])[$size - 1];
-            }
         } else {
-            $size = sizeof($this->data[$record_id]);
-            if ($size < 1) {
-                $this->last_error_message = "There are no instances for record $record_id " . __FUNCTION__;
-                return false;
-            } else {
-                return array_keys($this->data[$record_id])[$size - 1];
-            }
+            return max(array_keys($data));
         }
     }
 
@@ -314,93 +274,53 @@ class RepeatingForms
      * If there are no current instances, it will return 1.
      *
      * @param $record_id
-     * @param null $event_id
-     * @return int | false (if an error occurs)
+     * @return int
      */
-    public function getNextInstanceId($record_id, $event_id=null)
+    public function getNextInstanceId($record_id)
     {
-        // If this is a longitudinal project, the event_id must be supplied.
-        if ($this->is_longitudinal && is_null($event_id)) {
-            $this->last_error_message = "You must supply an event_id for longitudinal projects in " . __FUNCTION__;
-            return false;
-        } else if (!$this->is_longitudinal) {
-            $event_id = $this->event_id;
-        }
+        $this->verifyRecordDataLoaded($record_id);
 
         // Find the last instance and add 1 to it. If there are no current instances, return 1.
-        $last_index = $this->getLastInstanceId($record_id, $event_id);
-        if (empty($last_index)) {
+        $last_index = $this->getLastInstanceId($record_id);
+        if ($last_index === false) {
             return 1;
         } else {
-            return ++$last_index;
+            return $last_index + 1;
         }
     }
+
 
     /**
      * This function will return an array of instance_ids for this record/event.
      *
      * @param $record_id
-     * @param null $event_id
      * @return array of instance IDs
      */
-    public function getAllInstanceIds($record_id, $event_id=null)
+    public function getAllInstanceIds($record_id)
     {
-        // If this is a longitudinal project, the event_id must be supplied.
-        if ($this->is_longitudinal && is_null($event_id)) {
-            $this->last_error_message = "You must supply an event_id for longitudinal projects in " . __FUNCTION__;
-            return false;
-        } else if (!$this->is_longitudinal) {
-            $event_id = $this->event_id;
-        }
+        $this->verifyRecordDataLoaded($record_id);
 
+        $data = $this->data[$record_id][$this->event_id];
         // All instance IDs
-        if ($this->is_longitudinal) {
-            return array_keys($this->data[$record_id][$event_id]);
-        } else {
-            return array_keys($this->data[$record_id]);
-        }
+        return array_keys($data);
     }
 
 
     /**
      * This function will save an instance of data.  If the instance_id is supplied, it will overwrite
-     * the current data for that instance with the supplied data. An instance_id must be supplied since
-     * instance 1 is actually stored as null in the database.  If an instance is not supplied, an error
-     * will be returned.
+     * the current data for that instance with the supplied data.
      *
      * @param $record_id
+     * @param $instance_id
      * @param $data
-     * @param null $instance_id
-     * @param null $event_id
      * @return true | false (if an error occurs)
      */
-    public function saveInstance($record_id, $data, $instance_id = null, $event_id = null)
+    public function saveInstance($record_id, $instance_id, $data)
     {
-        if ($this->is_longitudinal && is_null($event_id)) {
-            $this->last_error = "Event ID Required for longitudinal project in " . __FUNCTION__;
-            return false;
-        } else if (!$this->is_longitudinal) {
-            $event_id = $this->event_id;
-        }
-
-        // If the instance ID is null, get the next one because we are saving a new instance
-        if (is_null($instance_id)) {
-            $this->last_error = "Instance ID is required to save data " . __FUNCTION__;
-            return false;
-        } else {
-            $next_instance_id = $instance_id;
-        }
-
-        // Check to see if this event is repeating or just the form is repeating
-        $repeating_events = $this->Proj->getRepeatingFormsEvents();
-        $repeat_instrument = ($repeating_events[$event_id] == 'WHOLE' ? '' : $this->instrument);
-
-        // Include instance and format into REDCap expected format
-        $new_instance[$record_id]['repeat_instances'][$event_id][$repeat_instrument][$next_instance_id] = $data;
-
+        $new_instance[$record_id]['repeat_instances'][$this->event_id][$this->getRepeatContextKey()][$instance_id] = $data;
         $return = REDCap::saveData($this->pid, 'array', $new_instance);
-        if (!isset($return["errors"]) and ($return["item_count"] <= 0)) {
-            $this->last_error = "Problem saving instance $next_instance_id for record $record_id in project $this->pid. Returned: " . json_encode($return);
+        if (!empty($return["errors"]) and ($return["item_count"] <= 0)) {
+            $this->last_error_message = "Problem saving instance $instance_id for record $record_id in project $this->pid. Returned: " . json_encode($return);
             return false;
         } else {
             return true;
@@ -408,25 +328,21 @@ class RepeatingForms
     }
 
 
-    public function saveAllInstances($record_id, $data, $event_id = null)
+    /**
+     * Save multiple instances at once
+     *
+     * @param $record_id
+     * @param array $multi_instance_data  An array of instances where the key is the instance ID
+     * @return bool
+     * @throws Exception
+     */
+    public function saveAllInstances($record_id, $multi_instance_data)
     {
-        if ($this->is_longitudinal && is_null($event_id)) {
-            $this->last_error = "Event ID Required for longitudinal project in " . __FUNCTION__;
-            return false;
-        } else if (!$this->is_longitudinal) {
-            $event_id = $this->event_id;
-        }
-
-        // Check to see if this event is repeating or just the form is repeating
-        $repeating_events = $this->Proj->getRepeatingFormsEvents();
-        $repeat_instrument = ($repeating_events[$event_id] == 'WHOLE' ? '' : $this->instrument);
-
         // Include instance and format into REDCap expected format
-        $new_instance[$record_id]['repeat_instances'][$event_id][$repeat_instrument] = $data;
-
+        $new_instance[$record_id]['repeat_instances'][$this->event_id][$this->getRepeatContextKey()] = $multi_instance_data;
         $return = REDCap::saveData($this->pid, 'array', $new_instance);
         if (!isset($return["errors"]) and ($return["item_count"] <= 0)) {
-            $this->last_error = "Problem saving instances for record $record_id in project $this->pid. Returned: " . json_encode($return);
+            $this->last_error_message = "Problem saving instances for record $record_id in project $this->pid. Returned: " . json_encode($return);
             return false;
         } else {
             return true;
@@ -436,95 +352,87 @@ class RepeatingForms
 
     /**
      * This function will delete the specified instance of a repeating form or repeating event.
+     * It does not require that any data have been loaded previously
      *
      * @param $record_id
      * @param $instance_id
-     * @param null $event_id
      * @return int $log_id - log entry number for this delete action
      */
-    public function deleteInstance($record_id, $instance_id, $event_id = null) {
-
-        // If longitudinal and event_id = null, send back an error
-        if ($this->is_longitudinal && is_null($event_id)) {
-            $this->last_error = "Event ID Required for longitudinal project in " . __FUNCTION__;
-            return false;
-        }
-
-        $log_id = Records::deleteForm($this->pid, $record_id, $this->instrument, $event_id, $instance_id);
+    public function deleteInstance($record_id, $instance_id) {
+        // TODO: Test that it works to supply the event_id in a classical project here
+        $log_id = Records::deleteForm($this->pid, $record_id, $this->instrument, $this->event_id, $instance_id);
 
         return $log_id;
     }
 
-    /**
-     * Return the data dictionary for this form
-     *
-     * @return array
-     */
-    public function getDataDictionary()
-    {
-        return $this->data_dictionary;
-    }
 
     /**
-     * Returns whether or not this project is longitudinal or not
-     *
-     * @return boolean
-     */
-    public function isProjectLongitudinal()
-    {
-        return $this->is_longitudinal;
-    }
-
-    /**
+     * TODO: NOT SURE HOW THIS IS USED - ALSO SHOULD IT RETURN ALL MATCHES OR JUST THE FIRST?
      * This function will look for the data supplied in the given record/event and send back the instance
      * number if found.  The data supplied does not need to be all the data in the instance, just the data that
      * you want to search on.
      *
      * @param $needle
      * @param $record_id
-     * @param null $event_id
      * @return int | false (if an error occurs)
      */
-    public function exists($needle, $record_id, $event_id=null) {
-
-        // Longitudinal projects need to supply an event_id
-        if ($this->is_longitudinal && is_null($event_id)) {
-            $this->last_error = "Event ID Required for longitudinal project in " . __FUNCTION__;
-            return false;
-        } else if (!$this->is_longitudinal) {
-            $event_id = $this->event_id;
-        }
-
-        // Check to see if we have the correct data loaded.
-        if ($this->data_loaded == false || $this->record_id != $record_id || $this->event_id != $event_id) {
-            $this->loadData($record_id, $event_id, null);
-        }
+    public function exists($needle, $record_id) {
+        $this->verifyRecordDataLoaded($record_id);
 
         // Look for the supplied data in an already created instance
         $found_instance_id = null;
         $size_of_needle = sizeof($needle);
-        if ($this->is_longitudinal) {
-            foreach ($this->data[$record_id][$event_id] as $instance_id => $instance) {
-                $intersected_fields = array_intersect_assoc($instance, $needle);
-                if (sizeof($intersected_fields) == $size_of_needle) {
-                    $found_instance_id = $instance_id;
-                }
-            }
-        } else {
-            foreach ($this->data[$this->record_id] as $instance_id => $instance) {
-                $intersected_fields = array_intersect_assoc($instance, $needle);
-                if (sizeof($intersected_fields) == $size_of_needle) {
-                    $found_instance_id = $instance_id;
-                }
+
+        // Modify search area depending on longitudinal or not -- TODO:Change this to store classical with event_id
+        $search_area = $this->data[$record_id][$this->event_id];
+
+        foreach ($search_area as $instance_id => $instance) {
+            $intersected_fields = array_intersect_assoc($instance, $needle);
+            if (sizeof($intersected_fields) == $size_of_needle) {
+                return $instance_id;
             }
         }
 
         // Supplied data did not match any instance data
-        if (is_null($found_instance_id)) {
-            $this->last_error_message = "Instance was not found with the supplied data " . __FUNCTION__;
-        }
-
-        return $found_instance_id;
+        $this->last_error_message = "Instance was not found with the supplied data " . __FUNCTION__;
+        return false;
     }
 
+
+    /**
+     * This should be called to verify the record_id in an incoming function call matches the current context of the
+     * object
+     * @param $record_id
+     * @return void
+     */
+    private function verifyRecordDataLoaded($record_id) {
+        // Check to see if we have the correct data loaded.
+        if ($this->data_loaded == false || $this->record_id != $record_id) {
+            $this->loadData($record_id, null, null);
+        }
+    }
+
+
+    /**
+     * Returns the correct key to use when building the array of data depending on the type of repeating form/event
+     * @return string|null
+     * @throws Exception
+     */
+    private function getRepeatContextKey() {
+        if ($this->repeat_context == self::REPEAT_FORM) {
+            return $this->instrument;
+        } elseif ($this->repeat_context = self::REPEAT_EVENT) {
+            return null;
+        } else {
+            throw new Exception("Invalid repeat context for $this->instrument in event $this->event_id");
+        }
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getRecordId()
+    {
+        return $this->record_id;
+    }
 }

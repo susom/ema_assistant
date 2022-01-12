@@ -4,13 +4,17 @@ namespace Stanford\EMA;
 use REDCap;
 use Exception;
 use ExternalModules\ExternalModules;
-use GuzzleHttp;
 
 require_once "emLoggerTrait.php";
 require_once "classes/ScheduleInstance.php";
 require_once "classes/RepeatingForms.php";
+require_once "classes/CronScan.php";
 require_once APP_PATH_DOCROOT . "/Libraries/Twilio/Services/Twilio.php";
 
+
+/**
+ *
+ */
 class EMA extends \ExternalModules\AbstractExternalModule {
 
     use emLoggerTrait;
@@ -18,17 +22,21 @@ class EMA extends \ExternalModules\AbstractExternalModule {
     const MINUTE_RESOLUTION         = 5;
 
     // EMA Notification Statuses
-    const SCHEDULE_CALCULATED        = 1;
-    const NOTIFICATION_SENT          = 2;
-    const REMINDER_1_SENT            = 3;
-    const REMINDER_2_SENT            = 4;
-    const SURVEY_COMPLETED           = 96;
-    const NOTIFICATION_MISSED        = 97;
-    const WINDOW_CLOSED              = 98;
-    const ACCESS_AFTER_CLOSED        = 99;
-    const ERROR_WHEN_SENDING         = 100;
+    const STATUS_SCHEDULED          = 1;
+    const STATUS_OPEN_SMS_SENT      = 2;
+    const STATUS_REMINIDER_1_SENT   = 3;
+    const STATUS_REMINIDER_2_SENT   = 4;
+    const STATUS_COMPLETED          = 96;
+    const STATUS_INSTANCE_SKIPPED   = 97;
+    const STATUS_WINDOW_CLOSED      = 98;
+    const STATUS_OPEN_AFTER_CLOSE   = 99;
+    const STATUS_SEND_ERROR         = 100;
+    const STATUS_OPTED_OUT          = 101;
 
-    const OPT_OUT_VALUE              = 1;
+
+    private $twilio_client;
+    private $from_number;
+    private $last_error_message;
 
     public function __construct() {
 		parent::__construct();
@@ -71,25 +79,22 @@ class EMA extends \ExternalModules\AbstractExternalModule {
      */
     private function setSurveyCompleteStatus($project_id, $record, $instrument, $event_id, $repeat_instance) {
 
-        // If this form is part of a configuration, set the status to Survey Complete
-        $update['ema_status'] = EMA::SURVEY_COMPLETED;
-
         try {
             // Retrieve the data on this form
-            $rf = new RepeatingForms($project_id, $instrument);
-            $instance = $rf->getInstanceById($record, $repeat_instance, $event_id);
+            $rf = new RepeatingForms($instrument, $event_id);
+            $instance = $rf->getInstanceById($record, $repeat_instance);
 
             // See if the status field exists on this form and if so, update the status
             if (array_key_exists('ema_status', $instance)) {
 
-                $rf->saveInstance($record, $update, $repeat_instance, $event_id);
-                $this->emDebug("Return message: " . $rf->last_error_message);
+                // If this form is part of a configuration, set the status to Survey Complete
+                $update['ema_status'] = EMA::STATUS_COMPLETED;
+                $rf->saveInstance($record, $repeat_instance, $update);
+                $this->emDebug("Survey Complete Save Return message: " . $rf->last_error_message);
             }
-
-        } catch (Exception $ex) {
+        } catch (\Exception $ex) {
             $this->emError("Cannot save Survey Complete status with error: " . json_encode($ex));
         }
-
     }
 
 
@@ -108,9 +113,9 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 
         // Retrieve the data for this instance
         try {
-            $rf = new RepeatingForms($project_id, $instrument);
-            $instance = $rf->getInstanceById($record, $repeat_instance, $event_id);
-        } catch (Exception $ex) {
+            $rf = new RepeatingForms($instrument, $event_id);
+            $instance = $rf->getInstanceById($record, $repeat_instance);
+        } catch (\Exception $ex) {
             $this->emError("Exception when trying to instance repeating Form Class with message" . json_encode($ex));
             return false;
         }
@@ -139,8 +144,8 @@ class EMA extends \ExternalModules\AbstractExternalModule {
                     if ($close_sec < $now_sec) {
 
                         // Set the status that the participant tried to access the survey after close
-                        $instance['ema_status'] = EMA::ACCESS_AFTER_CLOSED;
-                        $rf->saveInstance($record, $instance, $repeat_instance, $event_id);
+                        $instance['ema_status'] = EMA::STATUS_OPEN_AFTER_CLOSE;
+                        $rf->saveInstance($record, $repeat_instance, $instance);
                         $this->emDebug("Closed survey for project $project_id, record $record, form $instrument, event $event_id, instance $repeat_instance");
 
                         // Hide the normal container
@@ -202,8 +207,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
             'text-reminder1-message', 'text-reminder2-message', 'cell-phone-field', 'cell-phone-event'
         );
         $schedule_config_fields = array(
-            'schedule-name', 'schedule-offsets', 'schedule-randomize-window', 'schedule-reminders', 'schedule-close-offset',
-            'schedule-length'
+            'schedule-name', 'schedule-offsets', 'schedule-randomize-window', 'schedule-reminders', 'schedule-close-offset'
         );
 
         // Find the source of the configurations: config file or config builder
@@ -272,7 +276,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
         $is_longitudinal = REDCap::isLongitudinal();
         $all_events = REDCap::getEventNames(true, true);
 
-        // Retrieve configurations either from the config file or config builder
+        // Retrieve configuration
         [$windows, $schedules] = $this->getConfigAsArrays();
 
         // Retrieve the data for this record
@@ -293,7 +297,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 
                 // See if the ready logic has been met
                 $ready = REDCap::evaluateLogic($config['window-trigger-logic'], $project_id, $record);
-                $this->emDebug("Is this ready? ", $ready);
+                $this->emDebug("Create window " . $config['window-name'] . " for record $record? " . (int)$ready);
                 if ($ready) {
 
                     // Check that window-opt-out-field is not equal to 1
@@ -307,7 +311,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
                         $form_event_id = $this->convertEventToID($all_events, $config['window-form-event'], $is_longitudinal);
                         $alreadyCreated = $this->scheduleAlreadyExists($record_data[$record], $config['window-form'],
                             $form_event_id, $config['window-name']);
-                        $this->emDebug("Does schedule for window " . $config['window-name'] . " already exist? " . (string) $alreadyCreated);
+                        $this->emDebug("Does schedule for window " . $config['window-name'] . " already exist? " . (int) $alreadyCreated);
                         if (!$alreadyCreated) {
 
                             $schedule = $this->findScheduleForThisWindow($config['window-schedule-name'], $schedules);
@@ -335,7 +339,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
      * summary of each window and how many instances would be deleted.  This is used by the util page.
      * @param $project_id
      * @param $record
-     * @param $window
+     * @param $window // Name of window
      * @return array
      */
     public function deleteIncompleteInstancesByWindow($project_id, $record, $window = null)
@@ -376,8 +380,8 @@ class EMA extends \ExternalModules\AbstractExternalModule {
             $count_incomplete = 0;
             $count_deleted = 0;
 
-            $RF = new RepeatingForms($this->getProjectId(),$form_name);
-            foreach($form_data as $instance => $instance_data) {
+            $RF = new RepeatingForms($form_name, $form_event_id);
+            foreach($form_data as $instance_id => $instance_data) {
                 $count_total++;
                 $window_name = $instance_data['ema_window_name'];
                 $window_status = $instance_data[$complete_field];
@@ -386,9 +390,9 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 
                     if ($window === $window_name) {
                         // Delete this instance
-                        $log_id = $RF->deleteInstance($record, $instance, $form_event_id);
+                        $log_id = $RF->deleteInstance($record, $instance_id);
                         $count_deleted++;
-                        $this->emDebug("Deleted Instance $instance with log enter $log_id");
+                        $this->emDebug("$record - $instance_id: Deleted with log id #$log_id");
                     }
                 }
 
@@ -425,7 +429,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
             $sched = new ScheduleInstance($this);
             $sched->setUpSchedule($record, $config, $start_date, $final_start_time, $form_event_id, $schedule);
             $sched->createWindowSchedule();
-        } catch (Exception $ex) {
+        } catch (\Exception $ex) {
             $this->emError("Exception while instantiating ScheduleInstance with message" . $ex);
         }
 
@@ -572,7 +576,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
             $opt_out_value = $record_data[$record_id][$event_id]["$opt_out_field"];
 
             // Check the opt-out field and see if it is set.
-            $opt_out = ($opt_out_value == EMA::OPT_OUT_VALUE ? true : false);
+            $opt_out = ($opt_out_value == EMA::STATUS_OPTED_OUT ? true : false);
 
         } else {
 
@@ -606,25 +610,81 @@ class EMA extends \ExternalModules\AbstractExternalModule {
     {
         // Find all the projects that are using this EMA EM
         $enabled = ExternalModules::getEnabledProjects($this->PREFIX);
-
-        while ($proj = $enabled->fetch_assoc()) {
+        while ($row = $enabled->fetch_assoc()) {
 
             // Check for messages to send for each project using this EM
-            $proj_id = $proj['project_id'];
+            $project_id = $row['project_id'];
 
             // Create the API URL to this project
-            $msgCheckURL = $this->getUrl('pages/SendMessages.php?pid=' . $proj_id, true, true);
-            $this->emDebug("Calling cron to check for messages to send for pid $proj_id at URL " . $msgCheckURL);
-
+            $msgCheckURL = $this->getUrl('pages/SendMessages.php?pid=' . $project_id, true, true);
+            $this->emDebug("Calling SendMessage cron for pid $project_id at " . $msgCheckURL);
+            $ts_start = microtime(true);
             try {
-                $client = new GuzzleHttp\Client;
-                $resp = $client->request('GET', $msgCheckURL, [
-                    GuzzleHttp\RequestOptions::SYNCHRONOUS => true
+                $client = new \GuzzleHttp\Client;
+                $res = $client->request('GET', $msgCheckURL, [
+                   'synchronous' => true
                 ]);
-                $this->emDebug("Response", $resp->getBody());
-            } catch (Exception $ex) {
-                $this->emError("Exception throw when instantiating Guzzle with error " . json_encode($ex));
+                $this->emDebug("Guzzle Response", $res->getBody()->getContents());
+            } catch (\Exception $ex) {
+                $this->emError("Exception throw when instantiating Guzzle with error: " . $ex->getMessage());
             }
+            $ts_end = microtime(true) - $ts_start;
+            $this->emDebug("Cron for project $project_id took " . $ts_end . " seconds");
         }
     }
+
+
+    /**
+     * Send a Twilio SMS Message
+     * @param $to_number string
+     * @param $message string
+     * @return bool
+     * @throws Exception
+     */
+    public function sendTwilioMessage($to_number, $message) {
+        // Check to instantiate the client
+        if (empty($this->twilio_client)) {
+            $account_sid = $this->getProjectSetting('twilio-account-sid');
+            $token = $this->getProjectSetting('twilio-token');
+            if (empty($account_sid) | empty($token)) throw new Exception ("Missing Twilio setup - see external module config");
+            $this->twilio_client = new \Services_Twilio($account_sid, $token);
+        }
+        if (empty($this->from_number)) {
+            $from_number = $this->getProjectSetting('twilio-from-number');
+            if (empty($from_number)) throw new Exception ("Missing Twilio setup - see external module config");
+            $this->from_number = self::formatNumber($from_number);
+        }
+
+        $to = self::formatNumber($to_number);
+        // $this->emDebug("Formatting to number from $to_number to $to");
+
+        try {
+            $sms = $this->twilio_client->account->messages->sendMessage(
+                $this->from_number,
+                $to,
+                $message
+            );
+            if (!empty($sms->error_code) || !empty($sms->error_message)) {
+                $error_message = "Error #" . $sms->error_code . " - " . $sms->error_message;
+                $this->emError($error_message);
+                throw new Exception ($error_message);
+            }
+        } catch (\Exception $e) {
+            $this->emError("Exception when sending sms: " . $e->getMessage());
+            $this->last_error_message = $e->getMessage();
+            return false;
+        }
+        return true;
+    }
+
+
+    # format number for E164 format.  Consider adding better validation here
+    public static function formatNumber($number) {
+        // Strip anything but numbers and add a plus
+        $clean_number = preg_replace('/[^\d]/', '', $number);
+        if (strlen($clean_number) == 10) $clean_number = '1' . $clean_number;
+        return '+' . $clean_number;
+    }
+
+
 }
