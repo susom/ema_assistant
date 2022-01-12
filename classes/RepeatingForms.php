@@ -319,7 +319,6 @@ class RepeatingForms
     {
         $new_instance[$record_id]['repeat_instances'][$this->event_id][$this->getRepeatContextKey()][$instance_id] = $data;
         $return = REDCap::saveData($this->pid, 'array', $new_instance);
-
         if (!empty($return["errors"]) and ($return["item_count"] <= 0)) {
             $this->last_error_message = "Problem saving instance $instance_id for record $record_id in project $this->pid. Returned: " . json_encode($return);
             return false;
@@ -341,7 +340,6 @@ class RepeatingForms
     {
         // Include instance and format into REDCap expected format
         $new_instance[$record_id]['repeat_instances'][$this->event_id][$this->getRepeatContextKey()] = $multi_instance_data;
-
         $return = REDCap::saveData($this->pid, 'array', $new_instance);
         if (!isset($return["errors"]) and ($return["item_count"] <= 0)) {
             $this->last_error_message = "Problem saving instances for record $record_id in project $this->pid. Returned: " . json_encode($return);
