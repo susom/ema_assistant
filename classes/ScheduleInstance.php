@@ -4,7 +4,7 @@ namespace Stanford\EMA;
 use REDCap;
 use Exception;
 
-require_once "classes/RepeatingForms.php";
+// require_once "classes/RepeatingForms.php";
 
 /**
  * ScheduleInstance
@@ -63,7 +63,7 @@ class ScheduleInstance
         // These are the text messages that will be sent
         $this->text_msgs[EMA::STATUS_OPEN_SMS_SENT] = $window_config['text-message'];
         $this->text_msgs[EMA::STATUS_REMINIDER_1_SENT] = $window_config['text-reminder1-message'];
-        $this->text_msgs[EMA::REMINDER_2_SENT] = $window_config['text-reminder2-message'];
+        $this->text_msgs[EMA::STATUS_REMINIDER_2_SENT] = $window_config['text-reminder2-message'];
 
         // This is the schedule configuration to determine days/times of surveys
         $this->sched_offsets            = $schedule_config['schedule-offsets'];

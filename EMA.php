@@ -12,6 +12,9 @@ require_once "classes/CronScan.php";
 require_once APP_PATH_DOCROOT . "/Libraries/Twilio/Services/Twilio.php";
 
 
+/**
+ *
+ */
 class EMA extends \ExternalModules\AbstractExternalModule {
 
     use emLoggerTrait;
@@ -204,8 +207,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
             'text-reminder1-message', 'text-reminder2-message', 'cell-phone-field', 'cell-phone-event'
         );
         $schedule_config_fields = array(
-            'schedule-name', 'schedule-offsets', 'schedule-randomize-window', 'schedule-reminders', 'schedule-close-offset',
-            'schedule-length'
+            'schedule-name', 'schedule-offsets', 'schedule-randomize-window', 'schedule-reminders', 'schedule-close-offset'
         );
 
         // Find the source of the configurations: config file or config builder
@@ -274,7 +276,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
         $is_longitudinal = REDCap::isLongitudinal();
         $all_events = REDCap::getEventNames(true, true);
 
-        // Retrieve configurations either from the config file or config builder
+        // Retrieve configuration
         [$windows, $schedules] = $this->getConfigAsArrays();
 
         // Retrieve the data for this record
@@ -390,7 +392,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
                         // Delete this instance
                         $log_id = $RF->deleteInstance($record, $instance_id);
                         $count_deleted++;
-                        $this->emDebug("Deleted Instance $instance_id with log enter $log_id");
+                        $this->emDebug("$record - $instance_id: Deleted with log id #$log_id");
                     }
                 }
 
@@ -634,8 +636,8 @@ class EMA extends \ExternalModules\AbstractExternalModule {
 
     /**
      * Send a Twilio SMS Message
-     * @param $to_number
-     * @param $message
+     * @param $to_number string
+     * @param $message string
      * @return bool
      * @throws Exception
      */
