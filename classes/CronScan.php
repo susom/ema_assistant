@@ -73,14 +73,14 @@ class CronScan
             $cell_phone_event_id = $this->getEventId($window['cell-phone-event']);
 
             // These are the events where we may need to pull data values from, so lets only load those events
-            $data_events = [ $window_opt_out_event_id, $window_form_event_id, $cell_phone_event_id];
+            $data_events = [$window_opt_out_event_id, $window_form_event_id, $cell_phone_event_id];
 
             // Instantiate a repeatingForm helper
             $RF = new RepeatingForms($window_form, $window_form_event_id);
 
             // Loop through each record/instance and process it
             foreach ($instances as $i) {
-                $record_id    = $i['record_id'];
+                $record_id    = $i['record'];
                 $instance_id  = $i['instance'];
                 $age_in_min   = $i['age_in_min'];
 
