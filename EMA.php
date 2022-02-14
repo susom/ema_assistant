@@ -4,6 +4,7 @@ namespace Stanford\EMA;
 use REDCap;
 use Exception;
 use ExternalModules\ExternalModules;
+use DateTime;
 
 require_once "emLoggerTrait.php";
 require_once "classes/ScheduleInstance.php";
