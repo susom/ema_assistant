@@ -319,7 +319,21 @@ class EMA extends \ExternalModules\AbstractExternalModule {
                             $custom_start_time = $this->findFieldValue($record_data, $record, $all_events, $config['schedule-offset-override-field'],
                                 $config['schedule-offset-override-event'], $is_longitudinal);
 
-                            $final_start_time = (empty($custom_start_time) ? $config['schedule-offset-default'] : $custom_start_time);
+                            $final_start_time = $config['schedule-offset-default'];
+                            if (!empty($custom_start_time)) {
+                                if (strpos($custom_start_time, ":")) {
+                                    // Hour:sec field
+                                    $cst = new DateTime($custom_start_time);
+                                    $hours = $cst->format('h');
+                                    $mins = $cst->format('i');
+                                    $final_start_time = $hours * 60 + $mins;
+                                } elseif (is_numeric($custom_start_time)) {
+                                    // number value (assume minutes)
+                                    $final_start_time = intval($custom_start_time);
+                                } else {
+                                    $this->emError("Unknown value for custom start time: " . $custom_start_time);
+                                }
+                            }
 
                             // Everything's a go - create the schedule
                             $this->calculateWindowSchedule($record, $config, $start_date,
