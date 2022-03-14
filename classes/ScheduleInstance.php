@@ -126,7 +126,7 @@ class ScheduleInstance
             $status = $rf->saveInstance($this->record_id, $instance_id,  $saveSched);
             if (!$status) {
                 $message = $rf->last_error_message;
-                $this->emError("Error when saving data for window $this->window_name, record $this->record_id with message: " . $message);
+                $this->module->emError("Error when saving data for window $this->window_name, record $this->record_id with message: " . $message);
             }
         }
 
