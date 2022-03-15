@@ -325,7 +325,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
                                 if (strpos($custom_start_time, ":")) {
                                     // Hour:sec field
                                     $cst = new DateTime($custom_start_time);
-                                    $hours = $cst->format('h');
+                                    $hours = $cst->format('H');
                                     $mins = $cst->format('i');
                                     $final_start_time = $hours * 60 + $mins;
                                 } elseif (is_numeric($custom_start_time)) {
