@@ -105,7 +105,7 @@ class CronScan
                 $ts_start = microtime(true);
                 $instance_data = $RF->getInstanceById($record_id, $instance_id);
                 $ts_duration = microtime(true) - $ts_start;
-                $ema_status = $instance_data['ema_status'];
+                $ema_status = $i['ema_status'];
                 $this->module->emDebug("$record_id-$instance_id Loaded instance with status $ema_status in $ts_duration sec");
 
                 // Clear loop
@@ -268,6 +268,7 @@ class CronScan
      * @return array
      */
     private function getActiveInstances($window_name, $event_id) {
+
         // Query the database to obtain all instances that require processing
         $q = $this->module->query(
             "select
