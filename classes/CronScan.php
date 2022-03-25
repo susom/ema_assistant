@@ -67,13 +67,16 @@ class CronScan
             if (empty($instances)) continue;
 
             $window_opt_out_field = $window['window-opt-out-field'];
-            $window_opt_out_event_id = $this->getEventId($window['window-opt-out-event']);
+            if (!empty($window_opt_out_field)) {
+                $window_opt_out_event_id = $this->getEventId($window['window-opt-out-event']);
+            }
 
             $cell_phone_field = $window['cell-phone-field'];
             $cell_phone_event_id = $this->getEventId($window['cell-phone-event']);
 
             // These are the events where we may need to pull data values from, so lets only load those events
-            $data_events = [$window_opt_out_event_id, $window_form_event_id, $cell_phone_event_id];
+            $data_events_unfiltered = [$window_opt_out_event_id, $window_form_event_id, $cell_phone_event_id];
+            $data_events = array_filter($data_events_unfiltered);
 
             // Instantiate a repeatingForm helper
             $RF = new RepeatingForms($window_form, $window_form_event_id);
@@ -95,10 +98,14 @@ class CronScan
                 $ts_duration = microtime(true) - $ts_start;
                 $this->module->emDebug("$record_id-   Data loaded in $ts_duration sec");
 
-                // Determine if this record has opted out for this window
-                $opt_out = $this->getDataValue($record_id, $window_opt_out_event_id, $window_opt_out_field) == 1;
-                if ($opt_out) {
-                    $this->module->emDebug("Record $record_id, Event $window_opt_out_event_id, Field $window_opt_out_field for window $window_name is opted out");
+                // Determine if this record has opted out for this window if an opt-out field is selected
+                if (!empty($window_opt_out_field)) {
+                    $opt_out = $this->getDataValue($record_id, $window_opt_out_event_id, $window_opt_out_field) == 1;
+                    if ($opt_out) {
+                        $this->module->emDebug("Record $record_id, Event $window_opt_out_event_id, Field $window_opt_out_field for window $window_name is opted out");
+                    }
+                } else {
+                    $opt_out = false;
                 }
 
                 // Look at the instance to see if it needs updating
