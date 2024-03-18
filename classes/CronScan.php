@@ -276,6 +276,8 @@ class CronScan
      */
     private function getActiveInstances($window_name, $event_id) {
 
+        $data_table = method_exists('\REDCap', 'getDataTable') ? \REDCap::getDataTable($this->module->getProjectId()) : "redcap_data";
+
         // Query the database to obtain all instances that require processing
         $q = $this->module->query(
             "select
@@ -285,10 +287,10 @@ class CronScan
                 r2.value as ema_status,
                 TIMESTAMPDIFF(MINUTE, str_to_date(r1.value, '%Y-%m-%d %H:%i:%s'), current_timestamp) as age_in_min
             from
-                redcap_data r1
-                join redcap_data r2 on r1.project_id = r2.project_id and r1.record = r2.record
+                $data_table r1
+                join $data_table r2 on r1.project_id = r2.project_id and r1.record = r2.record
                     and r1.event_id = r2.event_id and r1.instance <=> r2.instance
-                join redcap_data r3 on r1.project_id = r3.project_id and r1.record = r3.record
+                join $data_table r3 on r1.project_id = r3.project_id and r1.record = r3.record
                     and r1.event_id = r3.event_id and r1.instance <=> r3.instance
                     and r3.value = ?
             where
