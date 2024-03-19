@@ -246,7 +246,7 @@ class EMA extends \ExternalModules\AbstractExternalModule {
      */
     private function getConfigField($field, $storage) {
 
-        $values = $this->getProjectSetting($field);
+        $values = $this->getProjectSetting($field)?:[];
         for($ncnt = 0; $ncnt < count($values); $ncnt++) {
             if (($field == 'window-days') or ($field == 'schedule-offsets') or ($field == 'schedule-reminders')) {
                 $storage[$ncnt][$field] = explode(",", $values[$ncnt]);
