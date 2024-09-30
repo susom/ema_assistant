@@ -99,7 +99,7 @@ class ScheduleInstance
             $rf = new RepeatingForms($this->form, $this->form_event_id);
             $next_instance_id = $rf->getNextInstanceId($this->record_id);
         } catch (Exception $ex) {
-            $this->module->emError("Exception when instantiating RepeatingForms class");
+            $this->module->emError("Exception when instantiating RepeatingForms class: " . $ex->getMessage());
             return;
         }
 
